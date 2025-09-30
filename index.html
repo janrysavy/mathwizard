@@ -2,13 +2,24 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Math Wizard</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
         }
 
         body {
@@ -17,16 +28,19 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
             color: white;
+            touch-action: manipulation;
         }
 
         #gameContainer {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
             background: #0f3460;
-            border: 4px solid #e94560;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
         }
 
         #gameCanvas {
@@ -35,33 +49,48 @@
             border: 2px solid #533483;
             image-rendering: pixelated;
             image-rendering: crisp-edges;
+            width: 100%;
+            flex: 1;
+            max-height: 50vh;
+        }
+
+        @media (min-width: 769px) {
+            #gameContainer {
+                max-width: 900px;
+                max-height: 90vh;
+                border: 4px solid #e94560;
+                border-radius: 10px;
+                padding: 20px;
+                box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+            }
         }
 
         #questionPanel {
-            margin-top: 20px;
-            padding: 20px;
+            margin-top: 10px;
+            padding: 15px 10px;
             background: #533483;
             border-radius: 8px;
             text-align: center;
+            flex-shrink: 0;
         }
 
         #question {
-            font-size: 32px;
+            font-size: clamp(20px, 5vw, 32px);
             font-weight: bold;
             color: #ffd700;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         #answersContainer {
-            display: flex;
-            gap: 15px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
             justify-content: center;
-            flex-wrap: wrap;
         }
 
         .answerBtn {
-            padding: 15px 30px;
-            font-size: 24px;
+            padding: 12px 20px;
+            font-size: clamp(18px, 4vw, 24px);
             font-weight: bold;
             background: linear-gradient(to bottom, #e94560, #c81e3d);
             color: white;
@@ -70,10 +99,13 @@
             cursor: pointer;
             transition: all 0.2s;
             font-family: 'Courier New', monospace;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .answerBtn:hover {
-            transform: scale(1.1);
+            transform: scale(1.05);
             box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
         }
 
@@ -82,11 +114,28 @@
         }
 
         #scorePanel {
-            margin-top: 15px;
+            margin-top: 10px;
             display: flex;
             justify-content: space-between;
-            font-size: 20px;
+            font-size: clamp(14px, 3vw, 20px);
             font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        @media (min-width: 769px) {
+            #questionPanel {
+                margin-top: 20px;
+                padding: 20px;
+            }
+
+            #answersContainer {
+                display: flex;
+                gap: 15px;
+            }
+
+            #scorePanel {
+                margin-top: 15px;
+            }
         }
 
         #gameOverOverlay {
