@@ -22,8 +22,9 @@
  * - Red aura around monsters (hidden during inflation)
  */
 
-const GAME_VERSION = (() => {
-    let version = '3.1.2';
+const VERSION_INFO = (() => {
+    const declared = '3.1.3';
+    let fromQuery = null;
 
     try {
         const script = document.currentScript || Array.from(document.querySelectorAll('script[src]')).find(s => s.src.includes('game.js'));
@@ -32,15 +33,25 @@ const GAME_VERSION = (() => {
             const src = script.getAttribute('src') || script.src || '';
             const match = src.match(/[?&]v=([^&]+)/);
             if(match && match[1]) {
-                version = decodeURIComponent(match[1]);
+                fromQuery = decodeURIComponent(match[1]);
             }
         }
     } catch(err) {
         // Ignore parsing issues and keep fallback value
     }
 
-    return version;
+    const effective = fromQuery || declared;
+    const mismatch = fromQuery !== null && fromQuery !== declared;
+
+    return {
+        declared,
+        fromQuery,
+        effective,
+        mismatch
+    };
 })();
+
+const GAME_VERSION = VERSION_INFO.effective;
 
 // Game state
 const game = {
@@ -3919,7 +3930,14 @@ function gameLoop() {
 
 const versionElement = document.getElementById('version');
 if(versionElement) {
-    versionElement.textContent = GAME_VERSION;
+    if(VERSION_INFO.mismatch && VERSION_INFO.fromQuery) {
+        const mismatchLabel = `JS ${VERSION_INFO.declared} / HTML ${VERSION_INFO.fromQuery}`;
+        versionElement.textContent = `⚠️ ${mismatchLabel}`;
+        versionElement.setAttribute('title', `Version mismatch detected: ${mismatchLabel}`);
+    } else {
+        versionElement.textContent = GAME_VERSION;
+        versionElement.removeAttribute('title');
+    }
 }
 
 // Initialize game
