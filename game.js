@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.3.3';
+    const declared = '3.3.4';
     let fromQuery = null;
 
     try {
@@ -3591,8 +3591,8 @@ function showVictoryScreen() {
     game.nextFireballTime = null;
     game.witchShield = null;
     showFinalResults({
-        title: 'VYHRÁL JSI!',
-        message: 'Dokončil jsi všech 10 levelů!'
+        title: 'YOU WON!',
+        message: 'You completed all 10 stages!'
     });
 }
 
