@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.3.1';
+    const declared = '3.3.3';
     let fromQuery = null;
 
     try {
@@ -55,11 +55,14 @@ const GAME_VERSION = VERSION_INFO.effective;
 
 const WITCH_HEAD_X = 90;
 const WITCH_HEAD_Y = 140;
-const WITCH_SHIELD_OFFSET_X = 10;
-const WITCH_SHIELD_OFFSET_Y = 10;
+const WITCH_SHIELD_OFFSET_X = 30;
+const WITCH_SHIELD_OFFSET_Y = 35;
 // Chest-level aim point for fireballs and shield origin: (100, 150)
 const WITCH_SHIELD_CENTER_X = WITCH_HEAD_X + WITCH_SHIELD_OFFSET_X;
 const WITCH_SHIELD_CENTER_Y = WITCH_HEAD_Y + WITCH_SHIELD_OFFSET_Y;
+const MONSTER_SPELL_TARGET_Y = 220; // Witch fireball aim point
+const BOSS_SPELL_TARGET_X_OFFSET = 90; // Boss impact point
+const BOSS_EXPLOSION_CENTER_X_OFFSET = BOSS_SPELL_TARGET_X_OFFSET - 35;
 const FIREBALL_MIN_INTERVAL = 2000;
 const FIREBALL_MAX_INTERVAL = 10000;
 const FIREBALL_SHIELD_RADIUS = 50;
@@ -3299,7 +3302,7 @@ function castSpell(isMiss = false) {
 
     if(isMiss) {
         // Wrong answer - spell misses with dramatic angle
-        const baseTargetX = game.isBossFight ? game.bossX + 100 : game.monsterX + 30;
+        const baseTargetX = game.isBossFight ? game.bossX + BOSS_SPELL_TARGET_X_OFFSET : game.monsterX + 30;
         const baseTargetY = 200;
 
         // Random offset: strongly up or down to ensure miss
@@ -3365,8 +3368,8 @@ function castSpell(isMiss = false) {
             targetY = effect.missTargetY;
         } else {
             // Hit - track monster/boss
-            targetX = game.isBossFight ? game.bossX + 100 : game.monsterX + 30;
-            targetY = 200;
+            targetX = game.isBossFight ? game.bossX + BOSS_SPELL_TARGET_X_OFFSET : game.monsterX + 30;
+            targetY = MONSTER_SPELL_TARGET_Y;
         }
 
         const previousX = effect.x;
@@ -3430,7 +3433,7 @@ function castSpell(isMiss = false) {
                             // Create wave distortion effect
                             for(let i = 0; i < 5; i++) {
                                 game.waveDistortion.push({
-                                    x: game.bossX + 100,
+                                    x: game.bossX + BOSS_EXPLOSION_CENTER_X_OFFSET,
                                     y: 200,
                                     radius: 0,
                                     maxRadius: 400,
@@ -3445,7 +3448,7 @@ function castSpell(isMiss = false) {
                                 setTimeout(() => {
                                     const angle = (i / 8) * Math.PI * 2;
                                     const distance = 50 + Math.random() * 50;
-                                    const x = game.bossX + 100 + Math.cos(angle) * distance;
+                                    const x = game.bossX + BOSS_EXPLOSION_CENTER_X_OFFSET + Math.cos(angle) * distance;
                                     const y = 200 + Math.sin(angle) * distance;
                                     createExplosion(x, y, ['#ff0000', '#ff4500', '#ff8c00', '#ffd700', '#ffffff'][Math.floor(Math.random() * 5)]);
                                 }, i * 100);
@@ -3458,7 +3461,7 @@ function castSpell(isMiss = false) {
                             // Central massive explosion
                             setTimeout(() => {
                                 for(let j = 0; j < 3; j++) {
-                                    createExplosion(game.bossX + 100, 200, '#ffffff');
+                                    createExplosion(game.bossX + BOSS_EXPLOSION_CENTER_X_OFFSET, 200, '#ffffff');
                                 }
                             }, 400);
 
@@ -3510,7 +3513,7 @@ function castSpell(isMiss = false) {
                         }, 3000);
                     } else {
                         // Boss still alive - small hit effect
-                        createExplosion(game.bossX + 100, 200, '#ffff00');
+                        createExplosion(game.bossX + BOSS_EXPLOSION_CENTER_X_OFFSET, 200, '#ffff00');
                         game.screenShake = 10;
 
                         // Add pending score after boss hit
