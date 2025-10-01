@@ -1,4 +1,3 @@
 # Agent Instructions
-
-- Pri kazdem commitu zvyš verzi v `game.js` a odpovidajici cache-busting parametr ve `index.html`.
-- Dbej na to, aby obě hodnoty byly synchronizované.
+- With every commit, bump the version number in `game.js` and update the corresponding cache-busting parameter in `index.html`.
+- Keep both values synchronized at all times.

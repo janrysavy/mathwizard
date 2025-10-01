@@ -23,7 +23,7 @@
  */
 
 const GAME_VERSION = (() => {
-    let version = '3.1.1';
+    let version = '3.1.2';
 
     try {
         const script = document.currentScript || Array.from(document.querySelectorAll('script[src]')).find(s => s.src.includes('game.js'));
