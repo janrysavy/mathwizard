@@ -22,6 +22,26 @@
  * - Red aura around monsters (hidden during inflation)
  */
 
+const GAME_VERSION = (() => {
+    let version = '3.1.1';
+
+    try {
+        const script = document.currentScript || Array.from(document.querySelectorAll('script[src]')).find(s => s.src.includes('game.js'));
+
+        if(script) {
+            const src = script.getAttribute('src') || script.src || '';
+            const match = src.match(/[?&]v=([^&]+)/);
+            if(match && match[1]) {
+                version = decodeURIComponent(match[1]);
+            }
+        }
+    } catch(err) {
+        // Ignore parsing issues and keep fallback value
+    }
+
+    return version;
+})();
+
 // Game state
 const game = {
     score: 0,
@@ -940,11 +960,24 @@ function drawForegroundAccents(themeName, palette, offset) {
 }
 
 // Create squeak sound effect using Web Audio API
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+let audioContext = null;
 const isMobile = /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
 let audioUnlocked = false;
 let audioUnlocking = false;
-const audioUnlockEvents = ['touchstart', 'touchend', 'mousedown', 'keydown'];
+const audioUnlockEvents = ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown'];
+
+function getAudioContext() {
+    if(!AudioContextClass) {
+        return null;
+    }
+
+    if(!audioContext) {
+        audioContext = new AudioContextClass();
+    }
+
+    return audioContext;
+}
 
 function removeAudioUnlockListeners() {
     audioUnlockEvents.forEach(evt => window.removeEventListener(evt, unlockAudioContext));
@@ -958,18 +991,25 @@ function unlockAudioContext() {
         return;
     }
 
+    const context = getAudioContext();
+    if(!context) {
+        audioUnlocked = true;
+        removeAudioUnlockListeners();
+        return;
+    }
+
     audioUnlocking = true;
-    ensureAudioContext().then(() => {
-        if(audioUnlocked) {
-            audioUnlocking = false;
-            removeAudioUnlockListeners();
-            return;
+
+    try {
+        if(context.state === 'suspended') {
+            context.resume().catch(() => {});
         }
 
-        const buffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
-        const source = audioContext.createBufferSource();
+        const buffer = context.createBuffer(1, 1, context.sampleRate || 44100);
+        const source = context.createBufferSource();
         source.buffer = buffer;
-        source.connect(audioContext.destination);
+        source.connect(context.destination);
+
         if(typeof source.start === 'function') {
             source.start(0);
         } else if(typeof source.noteOn === 'function') {
@@ -979,43 +1019,68 @@ function unlockAudioContext() {
         audioUnlocked = true;
         audioUnlocking = false;
         removeAudioUnlockListeners();
-    }).catch(() => {
+    } catch(err) {
         audioUnlocking = false;
-    });
+    }
 }
 
 audioUnlockEvents.forEach(evt => {
     window.addEventListener(evt, unlockAudioContext, { passive: true });
 });
 
+document.addEventListener('visibilitychange', () => {
+    if(document.hidden) {
+        return;
+    }
+
+    if(!audioUnlocked) {
+        return;
+    }
+
+    const context = getAudioContext();
+    if(context && context.state === 'suspended') {
+        context.resume().catch(() => {});
+    }
+});
+
 async function ensureAudioContext() {
-    if(audioContext.state === 'suspended') {
+    const context = getAudioContext();
+    if(!context) {
+        return null;
+    }
+
+    if(context.state === 'suspended') {
         try {
-            await audioContext.resume();
+            await context.resume();
         } catch(err) {
             // Ignore resume errors - the next user interaction should succeed
         }
     }
+
+    return context;
 }
 
 async function playSqueak() {
-    await ensureAudioContext();
+    const context = await ensureAudioContext();
+    if(!context) {
+        return;
+    }
 
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    const oscillator = context.createOscillator();
+    const gainNode = context.createGain();
 
     oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    gainNode.connect(context.destination);
 
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
+    oscillator.frequency.setValueAtTime(800, context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(400, context.currentTime + 0.1);
 
     const baseGain = isMobile ? 0.55 : 0.35;
-    gainNode.gain.setValueAtTime(baseGain, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(Math.max(0.06, baseGain * 0.18), audioContext.currentTime + 0.18);
+    gainNode.gain.setValueAtTime(baseGain, context.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(Math.max(0.06, baseGain * 0.18), context.currentTime + 0.18);
 
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.2);
+    oscillator.start(context.currentTime);
+    oscillator.stop(context.currentTime + 0.2);
 }
 
 // Canvas setup
@@ -3850,6 +3915,11 @@ function gameLoop() {
     ctx.restore();
 
     requestAnimationFrame(gameLoop);
+}
+
+const versionElement = document.getElementById('version');
+if(versionElement) {
+    versionElement.textContent = GAME_VERSION;
 }
 
 // Initialize game
