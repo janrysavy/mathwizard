@@ -941,8 +941,21 @@ function drawForegroundAccents(themeName, palette, offset) {
 
 // Create squeak sound effect using Web Audio API
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const isMobile = /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
 
-function playSqueak() {
+async function ensureAudioContext() {
+    if(audioContext.state === 'suspended') {
+        try {
+            await audioContext.resume();
+        } catch(err) {
+            // Ignore resume errors - the next user interaction should succeed
+        }
+    }
+}
+
+async function playSqueak() {
+    await ensureAudioContext();
+
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
 
@@ -952,11 +965,12 @@ function playSqueak() {
     oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
     oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
 
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    const baseGain = isMobile ? 0.55 : 0.35;
+    gainNode.gain.setValueAtTime(baseGain, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(Math.max(0.06, baseGain * 0.18), audioContext.currentTime + 0.18);
 
     oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.1);
+    oscillator.stop(audioContext.currentTime + 0.2);
 }
 
 // Canvas setup
