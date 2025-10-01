@@ -140,6 +140,9 @@
             font-size: clamp(14px, 3vw, 20px);
             font-weight: bold;
             flex-shrink: 0;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
         }
 
         @media (min-width: 769px) {
@@ -224,6 +227,7 @@
         <div id="scorePanel">
             <div>Score: <span id="score">0</span></div>
             <div>Correct: <span id="correct">0</span></div>
+            <div>Version: <span id="version"></span></div>
         </div>
     </div>
 
@@ -238,6 +242,6 @@
 
     <div id="gameOverOverlay"></div>
 
-    <script src="game.js?v=3"></script>
+    <script src="game.js?v=3.1.1"></script>
 </body>
 </html>
