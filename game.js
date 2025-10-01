@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.1.3';
+    const declared = '3.1.4';
     let fromQuery = null;
 
     try {
@@ -1139,6 +1139,8 @@ const stageNames = [
     'Death\'s Domain',
     'Dragon\'s Lair'
 ];
+
+const TOTAL_STAGES = stageNames.length;
 
 const stageThemeByStage = {
     1: 'forest',
@@ -3005,14 +3007,26 @@ function castSpell(isMiss = false) {
                             game.bossDeathAnim = null;
                             game.isBossFight = false;
                             game.bossHealth = 5;
-                            game.stage++;
-                            game.questionsInStage = 0;
 
                             // Add pending score after boss explosion
                             if(game.pendingScore > 0) {
                                 game.score += game.pendingScore;
                                 game.pendingScore = 0;
                                 updateScore();
+                            }
+
+                            const nextStage = game.stage + 1;
+                            const completedGame = nextStage > TOTAL_STAGES;
+
+                            game.stage = Math.min(nextStage, TOTAL_STAGES);
+                            game.questionsInStage = 0;
+
+                            if(completedGame) {
+                                game.monsterX = canvas.width;
+                                game.monsterSpeed = 1;
+                                game.bossX = 800;
+                                showVictoryScreen();
+                                return;
                             }
 
                             // Refresh environment to match the new stage theme
@@ -3070,6 +3084,48 @@ function updateScore() {
     document.getElementById('correct').textContent = game.correct;
 }
 
+function showFinalResults({ title = 'GAME OVER!', message = '' } = {}) {
+    game.stageAnnouncement = null;
+
+    const finalTitleEl = document.getElementById('finalTitle');
+    if(finalTitleEl) {
+        finalTitleEl.textContent = title;
+    }
+
+    const finalMessageEl = document.getElementById('finalMessage');
+    if(finalMessageEl) {
+        if(message) {
+            finalMessageEl.textContent = message;
+            finalMessageEl.style.display = 'block';
+        } else {
+            finalMessageEl.textContent = '';
+            finalMessageEl.style.display = 'none';
+        }
+    }
+
+    const speedBonus = Math.floor(game.correct * 5);
+    const totalScore = game.score + speedBonus;
+
+    document.getElementById('finalScore').textContent = totalScore;
+    document.getElementById('finalCorrect').textContent = game.correct;
+    document.getElementById('speedBonus').textContent = speedBonus;
+    document.getElementById('finalStage').textContent = game.stage;
+
+    document.getElementById('gameOverOverlay').style.display = 'block';
+    document.getElementById('gameOver').style.display = 'block';
+}
+
+function showVictoryScreen() {
+    clearAnswerLock();
+    setAnswerButtonsDisabled(true, { locked: true });
+    game.isGameOver = true;
+    game.currentMonster = null;
+    showFinalResults({
+        title: 'VYHRÁL JSI!',
+        message: 'Dokončil jsi všech 10 levelů!'
+    });
+}
+
 // Game over
 function gameOver() {
     clearAnswerLock();
@@ -3098,15 +3154,7 @@ function gameOver() {
         setTimeout(() => {
             game.isGameOver = true;
             game.witchDeathAnim = null;
-
-            const speedBonus = Math.floor(game.correct * 5);
-
-            document.getElementById('finalScore').textContent = game.score + speedBonus;
-            document.getElementById('finalCorrect').textContent = game.correct;
-            document.getElementById('speedBonus').textContent = speedBonus;
-            document.getElementById('finalStage').textContent = game.stage;
-            document.getElementById('gameOverOverlay').style.display = 'block';
-            document.getElementById('gameOver').style.display = 'block';
+            showFinalResults();
         }, 500);
     }, 800);
 }
@@ -3158,7 +3206,7 @@ document.getElementById('restartBtn').onclick = function() {
     updateScore();
 
     game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
-    showStageAnnouncement(1);
+    showStageAnnouncement(game.stage);
 };
 
 // Draw parallax background
@@ -3946,5 +3994,5 @@ initSeagulls();
 game.timeState = computeDayNightState();
 refreshEnvironment(game.timeState, { regenerateClouds: true });
 game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
-showStageAnnouncement(1);
+showStageAnnouncement(game.stage);
 gameLoop();
