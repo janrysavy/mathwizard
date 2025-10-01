@@ -942,6 +942,51 @@ function drawForegroundAccents(themeName, palette, offset) {
 // Create squeak sound effect using Web Audio API
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const isMobile = /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
+let audioUnlocked = false;
+let audioUnlocking = false;
+const audioUnlockEvents = ['touchstart', 'touchend', 'mousedown', 'keydown'];
+
+function removeAudioUnlockListeners() {
+    audioUnlockEvents.forEach(evt => window.removeEventListener(evt, unlockAudioContext));
+}
+
+function unlockAudioContext() {
+    if(audioUnlocked || audioUnlocking) {
+        if(audioUnlocked) {
+            removeAudioUnlockListeners();
+        }
+        return;
+    }
+
+    audioUnlocking = true;
+    ensureAudioContext().then(() => {
+        if(audioUnlocked) {
+            audioUnlocking = false;
+            removeAudioUnlockListeners();
+            return;
+        }
+
+        const buffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        if(typeof source.start === 'function') {
+            source.start(0);
+        } else if(typeof source.noteOn === 'function') {
+            source.noteOn(0);
+        }
+
+        audioUnlocked = true;
+        audioUnlocking = false;
+        removeAudioUnlockListeners();
+    }).catch(() => {
+        audioUnlocking = false;
+    });
+}
+
+audioUnlockEvents.forEach(evt => {
+    window.addEventListener(evt, unlockAudioContext, { passive: true });
+});
 
 async function ensureAudioContext() {
     if(audioContext.state === 'suspended') {
