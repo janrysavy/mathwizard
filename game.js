@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.2.0';
+    const declared = '3.3.0';
     let fromQuery = null;
 
     try {
@@ -52,6 +52,12 @@ const VERSION_INFO = (() => {
 })();
 
 const GAME_VERSION = VERSION_INFO.effective;
+
+const WITCH_CENTER_X = 90;
+const WITCH_CENTER_Y = 140;
+const FIREBALL_MIN_INTERVAL = 2000;
+const FIREBALL_MAX_INTERVAL = 10000;
+const FIREBALL_SHIELD_RADIUS = 50;
 
 // Game state
 const game = {
@@ -109,7 +115,11 @@ const game = {
     answerLockUntil: 0,
     wrongAttemptCount: 0,
     lastCorrectAnswer: null,
-    lastOperationType: null
+    lastOperationType: null,
+    fireballs: [],
+    nextFireballTime: null,
+    witchShield: null,
+    monsterVisualY: 180
 };
 
 // Initialize stars
@@ -1092,6 +1102,312 @@ async function playSqueak() {
 
     oscillator.start(context.currentTime);
     oscillator.stop(context.currentTime + 0.2);
+}
+
+async function playShieldImpactSound() {
+    const context = await ensureAudioContext();
+    if(!context) {
+        return;
+    }
+
+    const duration = 0.25;
+    const bufferSize = Math.floor((context.sampleRate || 44100) * duration);
+    const noiseBuffer = context.createBuffer(1, bufferSize, context.sampleRate || 44100);
+    const data = noiseBuffer.getChannelData(0);
+
+    for(let i = 0; i < bufferSize; i++) {
+        const decay = 1 - i / bufferSize;
+        data[i] = (Math.random() * 2 - 1) * Math.pow(decay, 2);
+    }
+
+    const noise = context.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = context.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(900, context.currentTime);
+
+    const gainNode = context.createGain();
+    const baseGain = isMobile ? 0.5 : 0.35;
+    gainNode.gain.setValueAtTime(baseGain, context.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, context.currentTime + duration);
+
+    noise.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(context.destination);
+
+    noise.start(context.currentTime);
+    noise.stop(context.currentTime + duration);
+}
+
+function randomFireballPalette() {
+    const hue = Math.floor(Math.random() * 360);
+    const accentHue = (hue + 40 + Math.random() * 80) % 360;
+
+    return {
+        core: `hsl(${hue}, 100%, 60%)`,
+        trail: `hsla(${accentHue}, 100%, 55%, 0.9)`,
+        ember: `hsla(${hue}, 100%, 72%, 0.55)`
+    };
+}
+
+function scheduleNextFireball(now = Date.now()) {
+    game.nextFireballTime = now + randInt(FIREBALL_MIN_INTERVAL, FIREBALL_MAX_INTERVAL);
+}
+
+function spawnMonsterFireball(originX, originY) {
+    const palette = randomFireballPalette();
+
+    game.fireballs.push({
+        x: originX,
+        y: originY,
+        speed: 8 + Math.random() * 3,
+        size: 6 + Math.random() * 3,
+        palette,
+        trail: [],
+        createdAt: Date.now(),
+        wobbleStrength: 0.15 + Math.random() * 0.15,
+        wobblePhase: Math.random() * Math.PI * 2
+    });
+}
+
+function maybeLaunchMonsterFireball(originX, originY) {
+    if(game.isGameOver) {
+        return;
+    }
+
+    const now = Date.now();
+
+    if(game.nextFireballTime === null) {
+        scheduleNextFireball(now);
+        return;
+    }
+
+    if(now >= game.nextFireballTime) {
+        spawnMonsterFireball(originX, originY);
+        scheduleNextFireball(now);
+    }
+}
+
+function drawFireball(fireball) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    if(fireball.trail.length > 1) {
+        const latest = fireball.trail[0];
+        const oldest = fireball.trail[fireball.trail.length - 1];
+        ctx.beginPath();
+        ctx.moveTo(latest.x, latest.y);
+        for(let i = 1; i < fireball.trail.length; i++) {
+            const segment = fireball.trail[i];
+            ctx.lineTo(segment.x, segment.y);
+        }
+        const gradient = ctx.createLinearGradient(latest.x, latest.y, oldest.x, oldest.y);
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+        gradient.addColorStop(0.35, fireball.palette.core);
+        gradient.addColorStop(1, fireball.palette.trail);
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = fireball.size * 1.6;
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.55;
+        ctx.stroke();
+    }
+
+    for(const segment of fireball.trail) {
+        if(segment.alpha <= 0) {
+            continue;
+        }
+
+        ctx.globalAlpha = segment.alpha * 0.6;
+        const glowRadius = segment.size * 1.9;
+        const gradient = ctx.createRadialGradient(segment.x, segment.y, 0, segment.x, segment.y, glowRadius);
+        gradient.addColorStop(0, fireball.palette.core);
+        gradient.addColorStop(0.6, fireball.palette.trail);
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(segment.x, segment.y, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    const coreGradient = ctx.createRadialGradient(fireball.x, fireball.y, 0, fireball.x, fireball.y, fireball.size * 1.6);
+    coreGradient.addColorStop(0, '#ffffff');
+    coreGradient.addColorStop(0.4, fireball.palette.core);
+    coreGradient.addColorStop(1, fireball.palette.ember);
+    ctx.fillStyle = coreGradient;
+    ctx.beginPath();
+    ctx.arc(fireball.x, fireball.y, fireball.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = fireball.palette.trail;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(fireball.x, fireball.y, fireball.size * 1.7, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+function triggerWitchShield(fireball) {
+    playShieldImpactSound();
+
+    const palette = fireball.palette;
+    game.witchShield = {
+        startTime: Date.now(),
+        duration: 650,
+        palette,
+        ringRotation: Math.random() * Math.PI * 2
+    };
+
+    for(let i = 0; i < 18; i++) {
+        const angle = (Math.PI * 2 * i) / 18 + Math.random() * 0.25;
+        const speed = 2 + Math.random() * 3;
+        const particleRadius = FIREBALL_SHIELD_RADIUS + Math.random() * 10;
+        game.particles.push({
+            x: WITCH_CENTER_X + Math.cos(angle) * particleRadius,
+            y: WITCH_CENTER_Y + Math.sin(angle) * particleRadius,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 0.3,
+            size: 2 + Math.random() * 3,
+            color: [palette.core, palette.trail, '#ffffff'][Math.floor(Math.random() * 3)],
+            life: 0.9,
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.4
+        });
+    }
+}
+
+function updateFireballs() {
+    const targetX = WITCH_CENTER_X;
+    const targetY = WITCH_CENTER_Y;
+
+    for(let i = game.fireballs.length - 1; i >= 0; i--) {
+        const fireball = game.fireballs[i];
+
+        fireball.wobblePhase += fireball.wobbleStrength;
+        const wobbleOffset = Math.sin(fireball.wobblePhase) * fireball.wobbleStrength;
+
+        const dx = targetX - fireball.x;
+        const dy = targetY - fireball.y;
+        const angle = Math.atan2(dy, dx) + wobbleOffset * 0.4;
+        const accel = Math.min(1.5, 0.9 + (Date.now() - fireball.createdAt) / 900);
+        const stepX = Math.cos(angle) * fireball.speed * accel;
+        const stepY = Math.sin(angle) * fireball.speed * accel;
+
+        fireball.x += stepX;
+        fireball.y += stepY;
+
+        fireball.trail.unshift({
+            x: fireball.x - stepX * 0.4,
+            y: fireball.y - stepY * 0.4,
+            alpha: 1,
+            size: fireball.size * (0.7 + Math.random() * 0.5)
+        });
+
+        if(fireball.trail.length > 22) {
+            fireball.trail.pop();
+        }
+
+        for(let t = fireball.trail.length - 1; t >= 0; t--) {
+            const segment = fireball.trail[t];
+            segment.alpha *= 0.8;
+            segment.size *= 0.95;
+            if(segment.alpha <= 0.05) {
+                fireball.trail.splice(t, 1);
+            }
+        }
+
+        const distance = Math.hypot(targetX - fireball.x, targetY - fireball.y);
+        if(distance <= FIREBALL_SHIELD_RADIUS) {
+            triggerWitchShield(fireball);
+            game.fireballs.splice(i, 1);
+            continue;
+        }
+
+        if(
+            fireball.x < -120 ||
+            fireball.x > canvas.width + 120 ||
+            fireball.y < -120 ||
+            fireball.y > canvas.height + 120
+        ) {
+            game.fireballs.splice(i, 1);
+            continue;
+        }
+
+        drawFireball(fireball);
+    }
+}
+
+function drawWitchShield() {
+    const shield = game.witchShield;
+    if(!shield) {
+        return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - shield.startTime;
+    const progress = elapsed / shield.duration;
+
+    if(progress >= 1) {
+        game.witchShield = null;
+        return;
+    }
+
+    const fade = 1 - Math.pow(progress, 1.3);
+    const oscillation = Math.sin(progress * Math.PI);
+    const baseRadius = FIREBALL_SHIELD_RADIUS + 6;
+    const currentRadius = baseRadius + oscillation * 20;
+
+    ctx.save();
+    ctx.translate(WITCH_CENTER_X, WITCH_CENTER_Y);
+    ctx.globalCompositeOperation = 'lighter';
+
+    const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.4, 0, 0, currentRadius + 30);
+    auraGradient.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+    auraGradient.addColorStop(0.5, shield.palette.core);
+    auraGradient.addColorStop(0.8, shield.palette.trail);
+    auraGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.globalAlpha = 0.55 * fade;
+    ctx.fillStyle = auraGradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, currentRadius + 30, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.9 * fade;
+    const ringGradient = ctx.createLinearGradient(-currentRadius, 0, currentRadius, 0);
+    ringGradient.addColorStop(0, shield.palette.trail);
+    ringGradient.addColorStop(0.5, '#ffffff');
+    ringGradient.addColorStop(1, shield.palette.core);
+    ctx.strokeStyle = ringGradient;
+    ctx.lineWidth = 4 + oscillation * 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.save();
+    shield.ringRotation += 0.15;
+    ctx.rotate(shield.ringRotation);
+    ctx.globalAlpha = 0.75 * fade;
+    for(let i = 0; i < 6; i++) {
+        const armAngle = (Math.PI * 2 * i) / 6;
+        const armLength = 18 + oscillation * 12;
+        ctx.save();
+        ctx.rotate(armAngle);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(currentRadius - armLength, -2, armLength, 4);
+        ctx.restore();
+    }
+    ctx.restore();
+
+    ctx.globalAlpha = 0.7 * fade;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, 6 + oscillation * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
 }
 
 // Canvas setup
@@ -3178,6 +3494,7 @@ function castSpell(isMiss = false) {
                             game.bossX = 800;
                             resetMonsterCycle(game.stage);
                             game.currentMonster = getNextMonsterForStage(game.stage);
+                            game.nextFireballTime = null;
 
                             // Show stage announcement, then generate problem
                             showStageAnnouncement(game.stage);
@@ -3262,6 +3579,9 @@ function showVictoryScreen() {
     setAnswerButtonsDisabled(true, { locked: true });
     game.isGameOver = true;
     game.currentMonster = null;
+    game.fireballs = [];
+    game.nextFireballTime = null;
+    game.witchShield = null;
     showFinalResults({
         title: 'VYHRÁL JSI!',
         message: 'Dokončil jsi všech 10 levelů!'
@@ -3272,6 +3592,10 @@ function showVictoryScreen() {
 function gameOver() {
     clearAnswerLock();
     setAnswerButtonsDisabled(true, { locked: true });
+
+    game.fireballs = [];
+    game.nextFireballTime = null;
+    game.witchShield = null;
 
     // Start witch death animation
     game.witchDeathAnim = {
@@ -3315,6 +3639,7 @@ document.getElementById('restartBtn').onclick = function() {
     game.spellEffect = null;
     game.explosion = null;
     game.particles = [];
+    game.fireballs = [];
     game.monsterScale = 1;
     game.shockwaves = [];
     game.screenShake = 0;
@@ -3339,6 +3664,9 @@ document.getElementById('restartBtn').onclick = function() {
     game.recentOperands = [];
     game.lastCorrectAnswer = null;
     game.lastOperationType = null;
+    game.nextFireballTime = null;
+    game.witchShield = null;
+    game.monsterVisualY = 180;
     initBats();
     initSeagulls();
     refreshEnvironment(game.timeState, { regenerateClouds: true });
@@ -3723,6 +4051,8 @@ function gameLoop() {
     // Draw wizard
     drawWizard();
 
+    let shooterOrigin = null;
+
     // Draw and move monster or boss
     if(!game.isGameOver) {
         if(game.isBossFight) {
@@ -3733,6 +4063,13 @@ function gameLoop() {
 
             const currentBoss = bosses[game.stage - 1];
             drawBoss(currentBoss, game.bossX, 100, 1);
+
+            if(!game.bossDeathAnim && !game.witchDeathAnim) {
+                shooterOrigin = {
+                    x: game.bossX + 110,
+                    y: 220
+                };
+            }
 
             // Check if boss reached witch (boss is 200px wide, witch at x=50)
             if(game.bossX < 150 && !game.bossDeathAnim && !game.witchDeathAnim) {
@@ -3758,6 +4095,7 @@ function gameLoop() {
                     game.monsterX = canvas.width;
                     game.monsterSpeed = 1; // Reset speed to default
                     game.currentMonster = getNextMonsterForStage(game.stage);
+                    game.nextFireballTime = null;
 
                     // Add pending score after explosion
                     if(game.pendingScore > 0) {
@@ -3774,6 +4112,7 @@ function gameLoop() {
                         game.bossHealth = 5;
                         game.questionsInStage = 0;
                         game.bossX = 800;
+                        game.nextFireballTime = null;
                     }
 
                     generateProblem();
@@ -3788,6 +4127,7 @@ function gameLoop() {
                 // Monster bobbing animation like witch
                 const monsterBobbing = Math.sin(Date.now() / 300) * 4;
                 const monsterY = 180 + monsterBobbing;
+                game.monsterVisualY = monsterY;
 
                 // Draw pulsing red aura around monster (only if not inflating)
                 if(!game.explosion) {
@@ -3829,6 +4169,13 @@ function gameLoop() {
                 }
 
                 drawMonster(game.currentMonster, game.monsterX, monsterY, game.monsterScale);
+
+                if(!game.explosion && !game.witchDeathAnim) {
+                    shooterOrigin = {
+                        x: game.monsterX + 40 * game.monsterScale,
+                        y: monsterY + 40 * game.monsterScale
+                    };
+                }
             }
 
             // Check if monster reached witch (monster is 80px wide, witch at x=50)
@@ -3837,6 +4184,15 @@ function gameLoop() {
             }
         }
     }
+
+    if(shooterOrigin && !game.isGameOver) {
+        maybeLaunchMonsterFireball(shooterOrigin.x, shooterOrigin.y);
+    } else if(!shooterOrigin) {
+        game.nextFireballTime = null;
+    }
+
+    updateFireballs();
+    drawWitchShield();
 
     // Draw particles
     updateParticles();
