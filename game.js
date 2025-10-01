@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.1.4';
+    const declared = '3.2.0';
     let fromQuery = null;
 
     try {
@@ -1098,19 +1098,117 @@ async function playSqueak() {
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Monster definitions (pixel art data)
-const monsters = [
-    { name: 'Slime', color: '#00ff00', eyes: '#000' },
-    { name: 'Ghost', color: '#ffffff', eyes: '#0000ff' },
-    { name: 'Demon', color: '#ff0000', eyes: '#ffff00' },
-    { name: 'Bat', color: '#8b4513', eyes: '#ff0000' },
-    { name: 'Spider', color: '#4b0082', eyes: '#00ff00' },
-    { name: 'Zombie', color: '#90ee90', eyes: '#ff0000' },
-    { name: 'Skeleton', color: '#f0f0f0', eyes: '#000' },
-    { name: 'Goblin', color: '#228b22', eyes: '#ff0000' },
-    { name: 'Orc', color: '#556b2f', eyes: '#ffff00' },
-    { name: 'Dragon', color: '#8b0000', eyes: '#ffa500' }
-];
+// Stage-specific monster definitions (5 per stage, cycling in order)
+const stageMonsterSets = {
+    1: [
+        { name: 'Moss Slime', type: 'slime', color: '#4fb060', highlight: '#9cf77d', eyes: '#213b18', mouth: '#2d5521', outline: '#f5ffe6' },
+        { name: 'Acorn Gremlin', type: 'goblin', color: '#7d4b2b', eyes: '#ffe067', outline: '#281305', weapon: '#b1783b', accent: '#f6d6a3', secondary: '#4a2d16' },
+        { name: 'Bramble Bat', type: 'bat', color: '#2d3b1f', wingInner: '#6b8f3b', eyes: '#ffe066', outline: '#dfffae', fangs: '#f7f7f7' },
+        { name: 'Thicket Spider', type: 'spider', color: '#3f2a18', eyes: '#ff9860', outline: '#f3d5b6', legColor: '#2b1a0d', abdomen: '#6d4a2f' },
+        { name: 'Glimmer Wisp', type: 'ghost', color: '#c8ffe6', eyes: '#2f6b42', outline: '#17533a', highlight: 'rgba(255,255,255,0.45)', mouth: '#1f4d33' }
+    ],
+    2: [
+        { name: 'Pebble Slime', type: 'slime', color: '#8fa0ad', highlight: '#d7e1e9', eyes: '#2b3f52', mouth: '#24344a', outline: '#162028' },
+        { name: 'Frostwing Bat', type: 'bat', color: '#6b7d93', wingInner: '#b5c6d9', eyes: '#f0f6ff', outline: '#101823', fangs: '#e6efff' },
+        { name: 'Granite Orc', type: 'orc', color: '#556068', eyes: '#f3f4f7', outline: '#0d141b', armor: '#8d969e', fists: '#4d565c' },
+        { name: 'Ridge Skeleton', type: 'skeleton', color: '#e2e7ee', eyes: '#2f3b4d', outline: '#0a1119', ribs: '#c7d0da' },
+        { name: 'Chasm Demon', type: 'demon', color: '#5d3a4f', eyes: '#ffd1f0', outline: '#13060f', horns: '#7b4a69', claws: '#2d1626' }
+    ],
+    3: [
+        { name: 'Magma Slime', type: 'slime', color: '#ff5a2b', highlight: '#ffa36b', eyes: '#330a02', mouth: '#421103', outline: '#1b0400' },
+        { name: 'Cinder Bat', type: 'bat', color: '#612620', wingInner: '#b1392a', eyes: '#ffe066', outline: '#1c0200', fangs: '#ffd6a5' },
+        { name: 'Ashen Zombie', type: 'zombie', color: '#5e4039', eyes: '#ffd27f', outline: '#130706', clothes: '#3b1f1a', mouth: '#1b0502' },
+        { name: 'Blister Spider', type: 'spider', color: '#7c2f23', eyes: '#ffe289', outline: '#2a0500', legColor: '#542018', abdomen: '#a63d2c' },
+        { name: 'Lava Drake', type: 'dragon', color: '#7f1408', eyes: '#ffd064', outline: '#1b0301', spikes: '#ff7034', wings: '#a32a12', fire: '#ff8c37', fireCore: '#ffd24f' }
+    ],
+    4: [
+        { name: 'Frostbite Slime', type: 'slime', color: '#6fd1ff', highlight: '#d6f5ff', eyes: '#0b2e4a', mouth: '#134260', outline: '#072333' },
+        { name: 'Snowbound Skeleton', type: 'skeleton', color: '#f8fdff', eyes: '#3c5f7f', outline: '#0b2335', ribs: '#d4ebf8' },
+        { name: 'Glacial Spider', type: 'spider', color: '#7fb2c9', eyes: '#f4ffff', outline: '#0b2433', legColor: '#5b8aa0', abdomen: '#9fd0e6' },
+        { name: 'Polar Wisp', type: 'ghost', color: '#e8fbff', eyes: '#2c4e78', outline: '#0f2433', highlight: 'rgba(255,255,255,0.6)', mouth: '#1f3a57' },
+        { name: 'Icebound Orc', type: 'orc', color: '#74a9b8', eyes: '#f9fdff', outline: '#0a1e2a', armor: '#b7d4de', fists: '#6798a6' }
+    ],
+    5: [
+        { name: 'Umbra Slime', type: 'slime', color: '#1b1a3a', highlight: '#5a4c95', eyes: '#f5f3ff', mouth: '#9e92ff', outline: '#f5edff' },
+        { name: 'Nightmare Bat', type: 'bat', color: '#2b1037', wingInner: '#5d2f85', eyes: '#ff6bf7', outline: '#f9e6ff', fangs: '#ffd8ff' },
+        { name: 'Shadow Weaver', type: 'spider', color: '#1b0d29', eyes: '#ff5d83', outline: '#f1dcff', legColor: '#14061d', abdomen: '#341247' },
+        { name: 'Void Walker', type: 'demon', color: '#321b45', eyes: '#9d7bff', outline: '#f0e5ff', horns: '#55306e', claws: '#140620' },
+        { name: 'Gloom Zombie', type: 'zombie', color: '#2a223c', eyes: '#c1b5ff', outline: '#f0eaff', clothes: '#3c325a', mouth: '#f5f2ff' }
+    ],
+    6: [
+        { name: 'Prism Slime', type: 'slime', color: '#5fd6ff', highlight: '#c4f4ff', eyes: '#11435f', mouth: '#1c5f7d', outline: '#062639' },
+        { name: 'Crystal Bat', type: 'bat', color: '#3c7d9f', wingInner: '#8ed1ef', eyes: '#e8fcff', outline: '#052233', fangs: '#d5f7ff' },
+        { name: 'Shard Sentinel', type: 'skeleton', color: '#dff3ff', eyes: '#2b6688', outline: '#041d2b', ribs: '#b8e3f8' },
+        { name: 'Luminous Wisp', type: 'ghost', color: '#bdf8ff', eyes: '#1f6a8c', outline: '#053144', highlight: 'rgba(255,255,255,0.5)', mouth: '#124a5f' },
+        { name: 'Facet Spider', type: 'spider', color: '#4a9bc4', eyes: '#f2ffff', outline: '#042836', legColor: '#32789b', abdomen: '#6ec3e5' }
+    ],
+    7: [
+        { name: 'Thunder Slime', type: 'slime', color: '#4b64c9', highlight: '#8ea1ff', eyes: '#f5f8ff', mouth: '#ffe066', outline: '#0a1333' },
+        { name: 'Gale Bat', type: 'bat', color: '#2e4a7c', wingInner: '#6f88c4', eyes: '#e1efff', outline: '#070f23', fangs: '#f9fbff' },
+        { name: 'Storm Goblin', type: 'goblin', color: '#47608f', eyes: '#ffe14b', outline: '#060c1a', weapon: '#2d3e68', accent: '#93a9da', secondary: '#29375a' },
+        { name: 'Static Skeleton', type: 'skeleton', color: '#d4dcf0', eyes: '#ffd147', outline: '#050914', ribs: '#b2bcdd' },
+        { name: 'Tempest Demon', type: 'demon', color: '#3a2f74', eyes: '#ffd966', outline: '#05041b', horns: '#5b47a3', claws: '#130a33' }
+    ],
+    8: [
+        { name: 'Ember Slime', type: 'slime', color: '#ff7a29', highlight: '#ffba78', eyes: '#3a1301', mouth: '#512103', outline: '#1c0600' },
+        { name: 'Coal Goblin', type: 'goblin', color: '#4b2f28', eyes: '#ffcf6a', outline: '#f3dcc6', weapon: '#6a3b2f', accent: '#ffb05a', secondary: '#36201b' },
+        { name: 'Forge Orc', type: 'orc', color: '#7a3a24', eyes: '#ffeaa6', outline: '#f4d3c2', armor: '#b1613e', fists: '#6a301a' },
+        { name: 'Magma Spider', type: 'spider', color: '#8f2a18', eyes: '#ffdca3', outline: '#f9c6a5', legColor: '#661c0f', abdomen: '#bf3f26' },
+        { name: 'Scorch Wisp', type: 'ghost', color: '#ffddb9', eyes: '#a33c00', outline: '#491600', highlight: 'rgba(255,206,149,0.6)', mouth: '#732400' }
+    ],
+    9: [
+        { name: 'Grave Slime', type: 'slime', color: '#6a6c5e', highlight: '#a5a88f', eyes: '#1e1f1a', mouth: '#2c2d24', outline: '#f1f2e8' },
+        { name: 'Rot Zombie', type: 'zombie', color: '#7a6f5f', eyes: '#f7e7c6', outline: '#f6f1e3', clothes: '#4d4236', mouth: '#261f16' },
+        { name: 'Bone Collector', type: 'skeleton', color: '#ede5d3', eyes: '#392c1d', outline: '#f9f4ea', ribs: '#d0c4b0' },
+        { name: 'Doom Bat', type: 'bat', color: '#3c2f3b', wingInner: '#705564', eyes: '#f6e4ff', outline: '#f5e5ff', fangs: '#fdeeff' },
+        { name: 'Crypt Wisp', type: 'ghost', color: '#d8d3e2', eyes: '#3e314b', outline: '#f8f5ff', highlight: 'rgba(255,255,255,0.5)', mouth: '#2b2034' }
+    ],
+    10: [
+        { name: 'Drake Whelp', type: 'dragon', color: '#a12d1f', eyes: '#ffe08a', outline: '#ffe2c6', spikes: '#ffb347', wings: '#c6552f', fire: '#ffb347', fireCore: '#fff2a8' },
+        { name: 'Dragonfire Slime', type: 'slime', color: '#ff9242', highlight: '#ffd4a0', eyes: '#521b02', mouth: '#652402', outline: '#ffe5c9' },
+        { name: 'Hoard Goblin', type: 'goblin', color: '#a17c2f', eyes: '#fff1a6', outline: '#fff5d1', weapon: '#c9a544', accent: '#ffe69a', secondary: '#6e531d' },
+        { name: 'Scale Spider', type: 'spider', color: '#6b3e2c', eyes: '#ffe7a4', outline: '#ffe7cf', legColor: '#462517', abdomen: '#91502f' },
+        { name: 'Ashen Wisp', type: 'ghost', color: '#f7dcd2', eyes: '#7a2f28', outline: '#ffe7dc', highlight: 'rgba(255,220,210,0.6)', mouth: '#6b1f18' }
+    ]
+};
+
+const stageMonsterIndices = {};
+
+function resetMonsterCycle(stageNumber = null) {
+    if(stageNumber === null) {
+        Object.keys(stageMonsterSets).forEach(stage => {
+            stageMonsterIndices[stage] = 0;
+        });
+        return;
+    }
+    stageMonsterIndices[stageNumber] = 0;
+}
+
+function getStageMonsters(stageNumber) {
+    return stageMonsterSets[stageNumber] || stageMonsterSets[1] || [];
+}
+
+function getNextMonsterForStage(stageNumber) {
+    const pool = getStageMonsters(stageNumber);
+    if(pool.length === 0) {
+        return { name: 'Default Slime', type: 'slime', color: '#7bc96f', eyes: '#0d2f12', outline: '#f5ffe6' };
+    }
+
+    const index = stageMonsterIndices[stageNumber] || 0;
+    const monsterDef = pool[index];
+    stageMonsterIndices[stageNumber] = (index + 1) % pool.length;
+
+    return { ...monsterDef };
+}
+
+resetMonsterCycle();
+
+const MONSTER_CANVAS_SIZE = 80;
+const monsterBufferCanvas = document.createElement('canvas');
+monsterBufferCanvas.width = MONSTER_CANVAS_SIZE;
+monsterBufferCanvas.height = MONSTER_CANVAS_SIZE;
+const monsterBufferCtx = monsterBufferCanvas.getContext('2d');
+monsterBufferCtx.imageSmoothingEnabled = false;
 
 // Boss definitions
 const bosses = [
@@ -1717,401 +1815,444 @@ function drawWizard() {
     ctx.restore();
 }
 
-// Draw pixel art monster with animation
+const monsterRenderers = {
+    slime(targetCtx, monster, frame) {
+        const bodyColor = monster.color || '#00ff00';
+        const highlight = monster.highlight || 'rgba(255, 255, 255, 0.3)';
+        const eyeColor = monster.eyes || '#000000';
+        const mouthColor = monster.mouth || '#000000';
+
+        const slimeWidth = [50, 52, 48][frame];
+        const slimeHeight = [35, 33, 37][frame];
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(15, 45 - slimeHeight, slimeWidth, slimeHeight);
+        targetCtx.fillRect(10, 50 - slimeHeight + 10, 60, slimeHeight - 10);
+
+        targetCtx.fillStyle = highlight;
+        targetCtx.fillRect(25, 20, 8, 8);
+        targetCtx.fillRect(30, 15, 5, 5);
+
+        targetCtx.fillStyle = eyeColor;
+        const eyeY = [25, 26, 24][frame];
+        targetCtx.fillRect(25, eyeY, 6, 6);
+        targetCtx.fillRect(45, eyeY, 6, 6);
+
+        targetCtx.fillStyle = mouthColor;
+        targetCtx.fillRect(32, 35, 12, 3);
+    },
+    ghost(targetCtx, monster, frame, bounce, scale) {
+        const bodyColor = monster.color || '#ffffff';
+        const eyeColor = monster.eyes || '#0000ff';
+        const mouthColor = monster.mouth || '#000000';
+        const highlight = monster.highlight;
+        const ghostY = bounce / Math.max(scale, 1);
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(10, 5 + ghostY, 60, 45);
+        targetCtx.fillRect(5, 15 + ghostY, 70, 35);
+
+        const ghostTails = [
+            [10, 45, 12, 12],
+            [28, 45, 12, 12],
+            [46, 45, 12, 12],
+            [64, 45, 12, 12]
+        ];
+        const waveOffset = [0, -2, 0][frame];
+        ghostTails.forEach(([tx, ty, tw, th]) => {
+            targetCtx.fillRect(tx, ty + ghostY + waveOffset, tw, th);
+        });
+
+        if(highlight) {
+            targetCtx.fillStyle = highlight;
+            targetCtx.fillRect(18, 12 + ghostY, 12, 18);
+            targetCtx.fillRect(48, 18 + ghostY, 10, 14);
+        }
+
+        targetCtx.fillStyle = eyeColor;
+        const ghostEyeSize = [8, 10, 8][frame];
+        targetCtx.fillRect(20, 20 + ghostY, ghostEyeSize, ghostEyeSize);
+        targetCtx.fillRect(50, 20 + ghostY, ghostEyeSize, ghostEyeSize);
+
+        targetCtx.fillStyle = mouthColor;
+        targetCtx.fillRect(35, 35 + ghostY, 3, 8);
+    },
+    demon(targetCtx, monster, frame) {
+        const bodyColor = monster.color || '#ff0000';
+        const hornColor = monster.horns || bodyColor;
+        const clawColor = monster.claws || '#000000';
+        const eyeColor = monster.eyes || '#ffff00';
+        const fangColor = monster.fangs || '#ffffff';
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(15, 15, 50, 40);
+
+        const hornOffset = [0, -2, 0][frame];
+        targetCtx.fillStyle = hornColor;
+        targetCtx.fillRect(10, 10 + hornOffset, 8, 12);
+        targetCtx.fillRect(62, 10 + hornOffset, 8, 12);
+        targetCtx.fillRect(8, 8 + hornOffset, 6, 8);
+        targetCtx.fillRect(66, 8 + hornOffset, 6, 8);
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(20, 50, 40, 30);
+
+        const armSwing = [0, 3, 0][frame];
+        targetCtx.fillRect(10, 55 + armSwing, 15, 20);
+        targetCtx.fillRect(55, 55 - armSwing, 15, 20);
+
+        targetCtx.fillStyle = clawColor;
+        targetCtx.fillRect(10, 73 + armSwing, 4, 6);
+        targetCtx.fillRect(18, 73 + armSwing, 4, 6);
+        targetCtx.fillRect(58, 73 - armSwing, 4, 6);
+        targetCtx.fillRect(66, 73 - armSwing, 4, 6);
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(25, 25, 8, 8);
+        targetCtx.fillRect(47, 25, 8, 8);
+
+        targetCtx.fillStyle = fangColor;
+        targetCtx.fillRect(28, 38, 4, 8);
+        targetCtx.fillRect(48, 38, 4, 8);
+    },
+    bat(targetCtx, monster, frame) {
+        const bodyColor = monster.color || '#8b4513';
+        const wingOuter = monster.wings || bodyColor;
+        const wingInner = monster.wingInner || wingOuter;
+        const eyeColor = monster.eyes || '#ff0000';
+        const fangColor = monster.fangs || '#ffffff';
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(30, 25, 20, 18);
+        targetCtx.fillRect(25, 18, 30, 15);
+
+        targetCtx.fillRect(22, 12, 6, 8);
+        targetCtx.fillRect(52, 12, 6, 8);
+        targetCtx.fillRect(20, 10, 4, 6);
+        targetCtx.fillRect(56, 10, 4, 6);
+
+        const wingSpread = [
+            { left: 15, right: 15, up: 5 },
+            { left: 20, right: 20, up: 0 },
+            { left: 15, right: 15, up: 5 }
+        ][frame];
+
+        targetCtx.fillStyle = wingOuter;
+        targetCtx.fillRect(10, 25 + wingSpread.up, wingSpread.left, 25);
+        targetCtx.fillRect(50, 25 + wingSpread.up, wingSpread.right, 25);
+
+        targetCtx.fillStyle = wingInner;
+        targetCtx.fillRect(5, 30 + wingSpread.up, wingSpread.left - 5, 20);
+        targetCtx.fillRect(60, 30 + wingSpread.up, wingSpread.right - 5, 20);
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(30, 22, 5, 5);
+        targetCtx.fillRect(45, 22, 5, 5);
+
+        targetCtx.fillStyle = fangColor;
+        targetCtx.fillRect(35, 30, 3, 5);
+        targetCtx.fillRect(42, 30, 3, 5);
+    },
+    spider(targetCtx, monster, frame) {
+        const bodyColor = monster.color || '#4b0082';
+        const headColor = monster.head || bodyColor;
+        const abdomenColor = monster.abdomen || bodyColor;
+        const legColor = monster.legColor || '#2b1d42';
+        const eyeColor = monster.eyes || '#00ff00';
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(25, 25, 30, 30);
+
+        targetCtx.fillStyle = headColor;
+        targetCtx.fillRect(20, 20, 20, 18);
+
+        targetCtx.fillStyle = abdomenColor;
+        targetCtx.fillRect(28, 50, 24, 20);
+
+        const legPositions = [
+            [0, -2, 0, 2, 0, -2, 0, 2],
+            [2, 0, -2, 0, 2, 0, -2, 0],
+            [0, 2, 0, -2, 0, 2, 0, -2]
+        ][frame];
+
+        targetCtx.fillStyle = legColor;
+        for(let i = 0; i < 4; i++) {
+            const legY = 28 + i * 8 + legPositions[i];
+            targetCtx.fillRect(5, legY, 20, 4);
+            targetCtx.fillRect(0, legY + 4, 10, 4);
+        }
+        for(let i = 0; i < 4; i++) {
+            const legY = 28 + i * 8 + legPositions[i + 4];
+            targetCtx.fillRect(55, legY, 20, 4);
+            targetCtx.fillRect(70, legY + 4, 10, 4);
+        }
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(23, 23, 4, 4);
+        targetCtx.fillRect(30, 23, 4, 4);
+        targetCtx.fillRect(26, 28, 3, 3);
+        targetCtx.fillRect(33, 28, 3, 3);
+    },
+    zombie(targetCtx, monster, frame) {
+        const bodyColor = monster.color || '#90ee90';
+        const clothesColor = monster.clothes || '#4a4a4a';
+        const eyeColor = monster.eyes || '#ff0000';
+        const mouthColor = monster.mouth || '#000000';
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(25, 40, 30, 40);
+
+        const headTilt = [0, 2, 0][frame];
+        targetCtx.fillRect(22 + headTilt, 10, 36, 35);
+
+        const armReach = [0, 3, 6][frame];
+        targetCtx.fillRect(15, 45, 12, 25 + armReach);
+        targetCtx.fillRect(53, 45, 12, 25 + armReach);
+
+        targetCtx.fillRect(12, 68 + armReach, 15, 10);
+        targetCtx.fillRect(53, 68 + armReach, 15, 10);
+
+        targetCtx.fillStyle = clothesColor;
+        targetCtx.fillRect(28, 50, 24, 15);
+        targetCtx.fillRect(30, 66, 20, 8);
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(30 + headTilt, 20, 6, 6);
+        targetCtx.fillRect(44 + headTilt, 20, 6, 6);
+
+        targetCtx.fillStyle = mouthColor;
+        targetCtx.fillRect(35 + headTilt, 32, 12, 8);
+    },
+    skeleton(targetCtx, monster, frame) {
+        const boneColor = monster.color || '#f0f0f0';
+        const ribColor = monster.ribs || '#d0d0d0';
+        const eyeColor = monster.eyes || '#000000';
+        const noseColor = monster.nose || '#000000';
+
+        targetCtx.fillStyle = boneColor;
+        targetCtx.fillRect(20, 10, 40, 35);
+
+        const jawOpen = [0, 3, 0][frame];
+        targetCtx.fillRect(25, 45 + jawOpen, 30, 10);
+
+        targetCtx.fillRect(25, 50, 30, 30);
+
+        targetCtx.fillStyle = ribColor;
+        for(let i = 0; i < 4; i++) {
+            targetCtx.fillRect(28, 55 + i * 6, 24, 3);
+        }
+
+        const armWave = [0, -4, 0][frame];
+        targetCtx.fillStyle = boneColor;
+        targetCtx.fillRect(12, 55 + armWave, 15, 25);
+        targetCtx.fillRect(53, 55 - armWave, 15, 25);
+
+        targetCtx.fillRect(10, 78 + armWave, 12, 8);
+        targetCtx.fillRect(58, 78 - armWave, 12, 8);
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(28, 20, 8, 10);
+        targetCtx.fillRect(44, 20, 8, 10);
+
+        targetCtx.fillStyle = noseColor;
+        targetCtx.fillRect(36, 32, 8, 6);
+    },
+    goblin(targetCtx, monster, frame) {
+        const skinColor = monster.color || '#228b22';
+        const weaponColor = monster.weapon || '#8b4513';
+        const eyeColor = monster.eyes || '#ff0000';
+        const teethColor = monster.teeth || '#ffffff';
+        const tunicColor = monster.secondary;
+
+        targetCtx.fillStyle = skinColor;
+        targetCtx.fillRect(25, 35, 30, 35);
+        targetCtx.fillRect(20, 10, 40, 30);
+
+        const earFlap = [0, -2, 0][frame];
+        targetCtx.fillRect(10, 15 + earFlap, 12, 18);
+        targetCtx.fillRect(58, 15 + earFlap, 12, 18);
+
+        const goblinArm = [0, 2, 0][frame];
+        targetCtx.fillRect(15, 40, 12, 25);
+        targetCtx.fillRect(53, 40, 12, 25);
+
+        targetCtx.fillRect(27, 65, 10, 15);
+        targetCtx.fillRect(43, 65, 10, 15);
+
+        if(tunicColor) {
+            targetCtx.fillStyle = tunicColor;
+            targetCtx.fillRect(25, 50, 30, 12);
+        }
+
+        targetCtx.fillStyle = weaponColor;
+        targetCtx.fillRect(10, 42 + goblinArm, 8, 20);
+        targetCtx.fillRect(8, 40 + goblinArm, 12, 8);
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(28, 20, 7, 7);
+        targetCtx.fillRect(45, 20, 7, 7);
+
+        targetCtx.fillStyle = teethColor;
+        targetCtx.fillRect(32, 32, 4, 6);
+        targetCtx.fillRect(38, 32, 4, 6);
+        targetCtx.fillRect(44, 32, 4, 6);
+    },
+    orc(targetCtx, monster, frame) {
+        const skinColor = monster.color || '#556b2f';
+        const tuskColor = monster.tusks || '#ffffff';
+        const armorColor = monster.armor || '#4a4a4a';
+        const eyeColor = monster.eyes || '#ffff00';
+        const browColor = monster.brow || '#000000';
+        const fistColor = monster.fists || skinColor;
+
+        targetCtx.fillStyle = skinColor;
+        targetCtx.fillRect(20, 40, 40, 40);
+        targetCtx.fillRect(22, 10, 36, 35);
+
+        targetCtx.fillStyle = tuskColor;
+        const tuskSize = [8, 10, 8][frame];
+        targetCtx.fillRect(25, 35, 6, tuskSize);
+        targetCtx.fillRect(49, 35, 6, tuskSize);
+
+        const muscleSize = [12, 15, 12][frame];
+        targetCtx.fillStyle = skinColor;
+        targetCtx.fillRect(10, 45, muscleSize, 30);
+        targetCtx.fillRect(60, 45, muscleSize, 30);
+
+        targetCtx.fillStyle = fistColor;
+        targetCtx.fillRect(8, 72, 14, 12);
+        targetCtx.fillRect(58, 72, 14, 12);
+
+        targetCtx.fillStyle = armorColor;
+        targetCtx.fillRect(12, 42, 16, 8);
+        targetCtx.fillRect(52, 42, 16, 8);
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(28, 18, 8, 8);
+        targetCtx.fillRect(44, 18, 8, 8);
+
+        targetCtx.fillStyle = browColor;
+        targetCtx.fillRect(26, 16, 12, 3);
+        targetCtx.fillRect(42, 16, 12, 3);
+    },
+    dragon(targetCtx, monster, frame) {
+        const bodyColor = monster.color || '#8b0000';
+        const wingColor = monster.wings || bodyColor;
+        const eyeColor = monster.eyes || '#ffa500';
+        const spikeColor = monster.spikes || '#ff4500';
+        const hornColor = monster.horns || bodyColor;
+        const tailColor = monster.tail || bodyColor;
+        const fireColor = monster.fire || '#ff6600';
+        const fireCoreColor = monster.fireCore || '#ffaa00';
+        const nostrilColor = monster.nostrils || '#000000';
+
+        targetCtx.fillStyle = bodyColor;
+        targetCtx.fillRect(25, 30, 40, 30);
+        targetCtx.fillRect(15, 20, 30, 25);
+        targetCtx.fillRect(5, 25, 15, 15);
+
+        targetCtx.fillStyle = hornColor;
+        targetCtx.fillRect(18, 10, 8, 12);
+        targetCtx.fillRect(34, 10, 8, 12);
+        targetCtx.fillRect(16, 6, 6, 8);
+        targetCtx.fillRect(38, 6, 6, 8);
+
+        const dragonWing = [
+            { size: 20, angle: 0 },
+            { size: 25, angle: -5 },
+            { size: 20, angle: 0 }
+        ][frame];
+
+        targetCtx.fillStyle = wingColor;
+        targetCtx.fillRect(15, 25 + dragonWing.angle, dragonWing.size, 30);
+        targetCtx.fillRect(10, 30 + dragonWing.angle, dragonWing.size - 5, 25);
+        targetCtx.fillRect(50, 25 + dragonWing.angle, dragonWing.size, 30);
+        targetCtx.fillRect(55, 30 + dragonWing.angle, dragonWing.size - 5, 25);
+
+        targetCtx.fillStyle = tailColor;
+        targetCtx.fillRect(60, 40, 15, 10);
+        targetCtx.fillRect(70, 38, 8, 14);
+
+        targetCtx.fillStyle = spikeColor;
+        for(let i = 0; i < 4; i++) {
+            targetCtx.fillRect(28 + i * 8, 28, 5, 8);
+        }
+
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(20, 28, 7, 7);
+        targetCtx.fillRect(33, 28, 7, 7);
+
+        targetCtx.fillStyle = nostrilColor;
+        targetCtx.fillRect(8, 30, 4, 4);
+        targetCtx.fillRect(8, 36, 4, 4);
+
+        if(frame === 1) {
+            targetCtx.fillStyle = fireColor;
+            targetCtx.fillRect(0, 28, 8, 8);
+            targetCtx.fillStyle = fireCoreColor;
+            targetCtx.fillRect(-5, 30, 8, 4);
+        }
+    }
+};
+
 function drawMonster(monster, x, y, scale = 1) {
+    if(!monster) {
+        return;
+    }
+
     game.monsterAnimFrame += 0.1;
     const frame = Math.floor(game.monsterAnimFrame) % 3;
     const bounce = Math.sin(Date.now() / 200) * 2;
+
+    monsterBufferCtx.clearRect(0, 0, MONSTER_CANVAS_SIZE, MONSTER_CANVAS_SIZE);
+    const renderer = monsterRenderers[monster.type] || (monster.name ? monsterRenderers[monster.name.toLowerCase()] : null);
+
+    if(renderer) {
+        renderer(monsterBufferCtx, monster, frame, bounce, scale);
+    } else {
+        const bodyColor = monster.color || '#ffffff';
+        const eyeColor = monster.eyes || '#000000';
+        monsterBufferCtx.fillStyle = bodyColor;
+        monsterBufferCtx.fillRect(20, 20, 40, 40);
+        monsterBufferCtx.fillStyle = eyeColor;
+        monsterBufferCtx.fillRect(30, 30, 6, 6);
+        monsterBufferCtx.fillRect(44, 30, 6, 6);
+    }
+
+    const previousSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
 
     ctx.save();
     ctx.translate(x + 40, y + 40);
     ctx.scale(scale, scale);
     ctx.translate(-40, -40);
 
-    switch(monster.name) {
-        case 'Slime':
-            // Body - jiggly slime animation
-            ctx.fillStyle = monster.color;
-            const slimeWidth = [50, 52, 48][frame];
-            const slimeHeight = [35, 33, 37][frame];
-            ctx.fillRect(15, 45 - slimeHeight, slimeWidth, slimeHeight);
-            ctx.fillRect(10, 50 - slimeHeight + 10, 60, slimeHeight - 10);
-
-            // Shine effect
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.fillRect(25, 20, 8, 8);
-            ctx.fillRect(30, 15, 5, 5);
-
-            // Eyes
-            ctx.fillStyle = monster.eyes;
-            const eyeY = [25, 26, 24][frame];
-            ctx.fillRect(25, eyeY, 6, 6);
-            ctx.fillRect(45, eyeY, 6, 6);
-
-            // Mouth
-            ctx.fillRect(32, 35, 12, 3);
-            break;
-
-        case 'Ghost':
-            // Body - floating animation
-            const ghostY = bounce / scale;
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(10, 5 + ghostY, 60, 45);
-            ctx.fillRect(5, 15 + ghostY, 70, 35);
-
-            // Wavy bottom
-            const ghostTails = [
-                [10, 45, 12, 12],
-                [28, 45, 12, 12],
-                [46, 45, 12, 12],
-                [64, 45, 12, 12]
-            ];
-            const waveOffset = [0, -2, 0][frame];
-            ghostTails.forEach(([tx, ty, tw, th]) => {
-                ctx.fillRect(tx, ty + ghostY + waveOffset, tw, th);
-            });
-
-            // Eyes
-            ctx.fillStyle = monster.eyes;
-            const ghostEyeSize = [8, 10, 8][frame];
-            ctx.fillRect(20, 20 + ghostY, ghostEyeSize, ghostEyeSize);
-            ctx.fillRect(50, 20 + ghostY, ghostEyeSize, ghostEyeSize);
-
-            // Mouth - spooky
-            ctx.fillStyle = '#000';
-            ctx.fillRect(35, 35 + ghostY, 3, 8);
-            break;
-
-        case 'Demon':
-            // Head
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(15, 15, 50, 40);
-
-            // Horns - animated
-            const hornOffset = [0, -2, 0][frame];
-            ctx.fillRect(10, 10 + hornOffset, 8, 12);
-            ctx.fillRect(62, 10 + hornOffset, 8, 12);
-            ctx.fillRect(8, 8 + hornOffset, 6, 8);
-            ctx.fillRect(66, 8 + hornOffset, 6, 8);
-
-            // Body
-            ctx.fillRect(20, 50, 40, 30);
-
-            // Arms
-            const armSwing = [0, 3, 0][frame];
-            ctx.fillRect(10, 55 + armSwing, 15, 20);
-            ctx.fillRect(55, 55 - armSwing, 15, 20);
-
-            // Claws
-            ctx.fillStyle = '#000';
-            ctx.fillRect(10, 73 + armSwing, 4, 6);
-            ctx.fillRect(18, 73 + armSwing, 4, 6);
-            ctx.fillRect(58, 73 - armSwing, 4, 6);
-            ctx.fillRect(66, 73 - armSwing, 4, 6);
-
-            // Eyes - glowing
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(25, 25, 8, 8);
-            ctx.fillRect(47, 25, 8, 8);
-
-            // Fangs
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(28, 38, 4, 8);
-            ctx.fillRect(48, 38, 4, 8);
-            break;
-
-        case 'Bat':
-            // Body
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(30, 25, 20, 18);
-
-            // Head
-            ctx.fillRect(25, 18, 30, 15);
-
-            // Ears
-            ctx.fillRect(22, 12, 6, 8);
-            ctx.fillRect(52, 12, 6, 8);
-            ctx.fillRect(20, 10, 4, 6);
-            ctx.fillRect(56, 10, 4, 6);
-
-            // Wings - flapping animation
-            const wingSpread = [
-                { left: 15, right: 15, up: 5 },
-                { left: 20, right: 20, up: 0 },
-                { left: 15, right: 15, up: 5 }
-            ][frame];
-
-            // Left wing
-            ctx.fillRect(10, 25 + wingSpread.up, wingSpread.left, 25);
-            ctx.fillRect(5, 30 + wingSpread.up, wingSpread.left - 5, 20);
-
-            // Right wing
-            ctx.fillRect(50, 25 + wingSpread.up, wingSpread.right, 25);
-            ctx.fillRect(60, 30 + wingSpread.up, wingSpread.right - 5, 20);
-
-            // Eyes
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(30, 22, 5, 5);
-            ctx.fillRect(45, 22, 5, 5);
-
-            // Fangs
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(35, 30, 3, 5);
-            ctx.fillRect(42, 30, 3, 5);
-            break;
-
-        case 'Spider':
-            // Body
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(25, 25, 30, 30);
-
-            // Head
-            ctx.fillRect(20, 20, 20, 18);
-
-            // Abdomen
-            ctx.fillRect(28, 50, 24, 20);
-
-            // Legs - walking animation
-            const legPositions = [
-                [0, -2, 0, 2, 0, -2, 0, 2],
-                [2, 0, -2, 0, 2, 0, -2, 0],
-                [0, 2, 0, -2, 0, 2, 0, -2]
-            ][frame];
-
-            // Left legs
-            for(let i = 0; i < 4; i++) {
-                const legY = 28 + i * 8 + legPositions[i];
-                ctx.fillRect(5, legY, 20, 4);
-                ctx.fillRect(0, legY + 4, 10, 4);
-            }
-
-            // Right legs
-            for(let i = 0; i < 4; i++) {
-                const legY = 28 + i * 8 + legPositions[i + 4];
-                ctx.fillRect(55, legY, 20, 4);
-                ctx.fillRect(70, legY + 4, 10, 4);
-            }
-
-            // Eyes - multiple spider eyes
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(23, 23, 4, 4);
-            ctx.fillRect(30, 23, 4, 4);
-            ctx.fillRect(26, 28, 3, 3);
-            ctx.fillRect(33, 28, 3, 3);
-            break;
-
-        case 'Zombie':
-            // Body
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(25, 40, 30, 40);
-
-            // Head - tilted
-            const headTilt = [0, 2, 0][frame];
-            ctx.fillRect(22 + headTilt, 10, 36, 35);
-
-            // Arms - reaching
-            const armReach = [0, 3, 6][frame];
-            ctx.fillRect(15, 45, 12, 25 + armReach);
-            ctx.fillRect(53, 45, 12, 25 + armReach);
-
-            // Hands
-            ctx.fillRect(12, 68 + armReach, 15, 10);
-            ctx.fillRect(53, 68 + armReach, 15, 10);
-
-            // Torn clothes
-            ctx.fillStyle = '#4a4a4a';
-            ctx.fillRect(28, 50, 24, 15);
-            ctx.fillRect(30, 66, 20, 8);
-
-            // Eyes - dead
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(30 + headTilt, 20, 6, 6);
-            ctx.fillRect(44 + headTilt, 20, 6, 6);
-
-            // Mouth - gaping
-            ctx.fillStyle = '#000';
-            ctx.fillRect(35 + headTilt, 32, 12, 8);
-            break;
-
-        case 'Skeleton':
-            // Skull
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(20, 10, 40, 35);
-
-            // Jaw - chattering
-            const jawOpen = [0, 3, 0][frame];
-            ctx.fillRect(25, 45 + jawOpen, 30, 10);
-
-            // Body - ribcage
-            ctx.fillRect(25, 50, 30, 30);
-
-            // Ribs
-            ctx.fillStyle = '#d0d0d0';
-            for(let i = 0; i < 4; i++) {
-                ctx.fillRect(28, 55 + i * 6, 24, 3);
-            }
-
-            // Arms - waving
-            const armWave = [0, -4, 0][frame];
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(12, 55 + armWave, 15, 25);
-            ctx.fillRect(53, 55 - armWave, 15, 25);
-
-            // Hands
-            ctx.fillRect(10, 78 + armWave, 12, 8);
-            ctx.fillRect(58, 78 - armWave, 12, 8);
-
-            // Eye sockets
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(28, 20, 8, 10);
-            ctx.fillRect(44, 20, 8, 10);
-
-            // Nose hole
-            ctx.fillRect(36, 32, 8, 6);
-            break;
-
-        case 'Goblin':
-            // Body
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(25, 35, 30, 35);
-
-            // Head - big
-            ctx.fillRect(20, 10, 40, 30);
-
-            // Ears - large goblin ears
-            const earFlap = [0, -2, 0][frame];
-            ctx.fillRect(10, 15 + earFlap, 12, 18);
-            ctx.fillRect(58, 15 + earFlap, 12, 18);
-
-            // Arms
-            const goblinArm = [0, 2, 0][frame];
-            ctx.fillRect(15, 40, 12, 25);
-            ctx.fillRect(53, 40, 12, 25);
-
-            // Legs - crouching
-            ctx.fillRect(27, 65, 10, 15);
-            ctx.fillRect(43, 65, 10, 15);
-
-            // Weapon - club
-            ctx.fillStyle = '#8b4513';
-            ctx.fillRect(10, 42 + goblinArm, 8, 20);
-            ctx.fillRect(8, 40 + goblinArm, 12, 8);
-
-            // Eyes - beady
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(28, 20, 7, 7);
-            ctx.fillRect(45, 20, 7, 7);
-
-            // Teeth
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(32, 32, 4, 6);
-            ctx.fillRect(38, 32, 4, 6);
-            ctx.fillRect(44, 32, 4, 6);
-            break;
-
-        case 'Orc':
-            // Body - muscular
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(20, 40, 40, 40);
-
-            // Head
-            ctx.fillRect(22, 10, 36, 35);
-
-            // Tusks
-            ctx.fillStyle = '#fff';
-            const tuskSize = [8, 10, 8][frame];
-            ctx.fillRect(25, 35, 6, tuskSize);
-            ctx.fillRect(49, 35, 6, tuskSize);
-
-            // Arms - flexing
-            const muscleSize = [12, 15, 12][frame];
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(10, 45, muscleSize, 30);
-            ctx.fillRect(60, 45, muscleSize, 30);
-
-            // Fists
-            ctx.fillRect(8, 72, 14, 12);
-            ctx.fillRect(58, 72, 14, 12);
-
-            // Shoulder pads
-            ctx.fillStyle = '#4a4a4a';
-            ctx.fillRect(12, 42, 16, 8);
-            ctx.fillRect(52, 42, 16, 8);
-
-            // Eyes - angry
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(28, 18, 8, 8);
-            ctx.fillRect(44, 18, 8, 8);
-
-            // Brow - furrowed
-            ctx.fillStyle = '#000';
-            ctx.fillRect(26, 16, 12, 3);
-            ctx.fillRect(42, 16, 12, 3);
-            break;
-
-        case 'Dragon':
-            // Body
-            ctx.fillStyle = monster.color;
-            ctx.fillRect(25, 30, 40, 30);
-
-            // Head
-            ctx.fillRect(15, 20, 30, 25);
-
-            // Snout
-            ctx.fillRect(5, 25, 15, 15);
-
-            // Horns
-            ctx.fillRect(18, 10, 8, 12);
-            ctx.fillRect(34, 10, 8, 12);
-            ctx.fillRect(16, 6, 6, 8);
-            ctx.fillRect(38, 6, 6, 8);
-
-            // Wings - flapping
-            const dragonWing = [
-                { size: 20, angle: 0 },
-                { size: 25, angle: -5 },
-                { size: 20, angle: 0 }
-            ][frame];
-
-            // Left wing
-            ctx.fillRect(15, 25 + dragonWing.angle, dragonWing.size, 30);
-            ctx.fillRect(10, 30 + dragonWing.angle, dragonWing.size - 5, 25);
-
-            // Right wing
-            ctx.fillRect(50, 25 + dragonWing.angle, dragonWing.size, 30);
-            ctx.fillRect(55, 30 + dragonWing.angle, dragonWing.size - 5, 25);
-
-            // Tail
-            ctx.fillRect(60, 40, 15, 10);
-            ctx.fillRect(70, 38, 8, 14);
-
-            // Spikes on back
-            ctx.fillStyle = '#ff4500';
-            for(let i = 0; i < 4; i++) {
-                ctx.fillRect(28 + i * 8, 28, 5, 8);
-            }
-
-            // Eyes - fierce
-            ctx.fillStyle = monster.eyes;
-            ctx.fillRect(20, 28, 7, 7);
-            ctx.fillRect(33, 28, 7, 7);
-
-            // Nostrils
-            ctx.fillStyle = '#000';
-            ctx.fillRect(8, 30, 4, 4);
-            ctx.fillRect(8, 36, 4, 4);
-
-            // Fire breath - occasional
-            if(frame === 1) {
-                ctx.fillStyle = '#ff6600';
-                ctx.fillRect(0, 28, 8, 8);
-                ctx.fillStyle = '#ffaa00';
-                ctx.fillRect(-5, 30, 8, 4);
-            }
-            break;
-    }
-
+    const outlineColor = monster.outline || '#000000';
+    const outlineOffsets = [
+        '0px 0px',
+        '1px 0px',
+        '-1px 0px',
+        '0px 1px',
+        '0px -1px',
+        '1px 1px',
+        '-1px 1px',
+        '1px -1px',
+        '-1px -1px'
+    ];
+    const outlineFilter = outlineOffsets
+        .map(offset => `drop-shadow(${offset} 0px ${outlineColor})`)
+        .join(' ');
+
+    ctx.save();
+    ctx.filter = outlineFilter;
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.drawImage(monsterBufferCanvas, 0, 0);
     ctx.restore();
+
+    ctx.drawImage(monsterBufferCanvas, 0, 0);
+    ctx.restore();
+
+    ctx.imageSmoothingEnabled = previousSmoothing;
 }
 
 // Draw boss
@@ -3035,7 +3176,8 @@ function castSpell(isMiss = false) {
                             game.monsterX = canvas.width;
                             game.monsterSpeed = 1; // Reset speed to default
                             game.bossX = 800;
-                            game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
+                            resetMonsterCycle(game.stage);
+                            game.currentMonster = getNextMonsterForStage(game.stage);
 
                             // Show stage announcement, then generate problem
                             showStageAnnouncement(game.stage);
@@ -3205,7 +3347,8 @@ document.getElementById('restartBtn').onclick = function() {
     document.getElementById('gameOver').style.display = 'none';
     updateScore();
 
-    game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
+    resetMonsterCycle();
+    game.currentMonster = getNextMonsterForStage(game.stage);
     showStageAnnouncement(game.stage);
 };
 
@@ -3614,7 +3757,7 @@ function gameLoop() {
                     game.monsterScale = 1;
                     game.monsterX = canvas.width;
                     game.monsterSpeed = 1; // Reset speed to default
-                    game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
+                    game.currentMonster = getNextMonsterForStage(game.stage);
 
                     // Add pending score after explosion
                     if(game.pendingScore > 0) {
@@ -3993,6 +4136,7 @@ initBats();
 initSeagulls();
 game.timeState = computeDayNightState();
 refreshEnvironment(game.timeState, { regenerateClouds: true });
-game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
+resetMonsterCycle(game.stage);
+game.currentMonster = getNextMonsterForStage(game.stage);
 showStageAnnouncement(game.stage);
 gameLoop();
