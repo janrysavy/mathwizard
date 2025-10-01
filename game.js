@@ -2,15 +2,17 @@
  * MATH WIZARD - Educational Math Game
  *
  * Key Features:
- * - 8 progressive stages with different math problem types
- * - Stage 1: Addition 0-10
- * - Stage 2: Subtraction 0-10
- * - Stage 3: Addition 0-20
- * - Stage 4: Subtraction without crossing tens (e.g., 15-4 not 11-2)
- * - Stage 5: Addition 0-10 with unknown (? + 4 = 9)
- * - Stage 6: Subtraction 0-10 with unknown (? - 2 = 8)
- * - Stage 7: Addition of 3 numbers 0-10
- * - Stage 8+: Addition of 3 numbers 0-20
+ * - 10 progressive stages with different math problem types
+ * - Stage 1: a + b = ? with values 0-10
+ * - Stage 2: a - b = ? with values 0-10
+ * - Stage 3: ? + a = b with values 0-10
+ * - Stage 4: a - ? = b with values 0-10
+ * - Stage 5: a + b = ? with values 0-20
+ * - Stage 6: a - b = ? with values 0-20
+ * - Stage 7: a + b + c = ? with values 0-10
+ * - Stage 8: a + b + c = ? with values 0-20
+ * - Stage 9: a + b = ? with values 0-30
+ * - Stage 10: a - b = ? with values 0-30
  *
  * Important Rules:
  * - No operand repeats in the next 3 problems
@@ -39,7 +41,7 @@ const game = {
     shockwaves: [],
     screenShake: 0,
     recentProblems: [], // Track last 3 problems to avoid repeats
-    recentOperands: [], // Track last 3 operands (num1 and num2)
+    recentOperands: [], // Track operand sets for the last 3 problems
     pendingScore: 0, // Score to add after explosion
     parallax: {
         mountains: 0,
@@ -62,7 +64,21 @@ const game = {
     stageAnnouncement: null,
     witchDeathAnim: null,
     shootingStars: [],
-    seagulls: []
+    seagulls: [],
+    cloudLayers: [],
+    fireflies: [],
+    pollenMotes: [],
+    timeState: {
+        phase: 0,
+        blend: 1,
+        sunAlpha: 1,
+        moonAlpha: 0
+    },
+    answerLockTimer: null,
+    answerLockUntil: 0,
+    wrongAttemptCount: 0,
+    lastCorrectAnswer: null,
+    lastOperationType: null
 };
 
 // Initialize stars
@@ -103,6 +119,824 @@ function initSeagulls() {
             amplitude: 5 + Math.random() * 15
         });
     }
+}
+
+function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffleArray(array) {
+    for(let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
+
+function clamp01(value) {
+    return Math.max(0, Math.min(1, value));
+}
+
+function setAnswerButtonsDisabled(disabled, options = {}) {
+    const { locked = false } = options;
+    const buttons = document.querySelectorAll('.answerBtn');
+    buttons.forEach(btn => {
+        btn.disabled = disabled;
+        if(disabled && locked) {
+            btn.classList.add('answerBtn--locked');
+        } else if(!disabled || !locked) {
+            btn.classList.remove('answerBtn--locked');
+        }
+    });
+}
+
+function clearAnswerLock() {
+    if(game.answerLockTimer) {
+        clearTimeout(game.answerLockTimer);
+        game.answerLockTimer = null;
+    }
+    game.answerLockUntil = 0;
+    document.querySelectorAll('.answerBtn--locked').forEach(btn => btn.classList.remove('answerBtn--locked'));
+}
+
+function lockAnswerButtons(duration) {
+    clearAnswerLock();
+    game.answerLockUntil = Date.now() + duration;
+    setAnswerButtonsDisabled(true, { locked: true });
+
+    game.answerLockTimer = setTimeout(() => {
+        game.answerLockTimer = null;
+        game.answerLockUntil = 0;
+
+        if(!game.isGameOver && game.currentQuestion && !game.explosion && !game.witchDeathAnim) {
+            setAnswerButtonsDisabled(false);
+        }
+    }, duration);
+}
+
+function computeDayNightState(progress = game.celestialProgress) {
+    let phase = progress % 1;
+    if(phase < 0) {
+        phase += 1;
+    }
+
+    let sunAlpha = 0;
+    let moonAlpha = 0;
+    let sunTrack = 0;
+    let moonTrack = 0;
+
+    if(phase < 0.5) {
+        const sunProgress = clamp01(phase / 0.5);
+        sunAlpha = Math.sin(sunProgress * Math.PI);
+        sunTrack = sunProgress;
+    } else {
+        const moonProgress = clamp01((phase - 0.5) / 0.5);
+        moonAlpha = Math.sin(moonProgress * Math.PI);
+        moonTrack = moonProgress;
+    }
+
+    sunAlpha = clamp01(sunAlpha);
+    moonAlpha = clamp01(moonAlpha);
+
+    const blend = clamp01(sunAlpha);
+    const nightStrength = clamp01(Math.max(1 - blend, moonAlpha));
+
+    return {
+        phase,
+        blend,
+        sunAlpha,
+        moonAlpha,
+        sunTrack,
+        moonTrack,
+        dayStrength: blend,
+        nightStrength,
+        isDay: blend >= 0.5
+    };
+}
+
+function parseColorString(color) {
+    if(typeof color !== 'string') return null;
+    const trimmed = color.trim();
+
+    if(trimmed.startsWith('#')) {
+        let hex = trimmed.slice(1);
+        if(hex.length === 3) {
+            hex = hex.split('').map(char => char + char).join('');
+        }
+        if(hex.length !== 6) return null;
+        const value = parseInt(hex, 16);
+        if(Number.isNaN(value)) return null;
+        return {
+            r: (value >> 16) & 255,
+            g: (value >> 8) & 255,
+            b: value & 255,
+            a: 1
+        };
+    }
+
+    const rgbaMatch = trimmed.match(/^rgba?\(([^)]+)\)$/i);
+    if(rgbaMatch) {
+        const parts = rgbaMatch[1].split(',').map(part => part.trim());
+        const r = parseFloat(parts[0]);
+        const g = parseFloat(parts[1]);
+        const b = parseFloat(parts[2]);
+        const a = parts.length > 3 ? parseFloat(parts[3]) : 1;
+        if([r, g, b, a].some(component => Number.isNaN(component))) return null;
+        return {
+            r: Math.max(0, Math.min(255, r)),
+            g: Math.max(0, Math.min(255, g)),
+            b: Math.max(0, Math.min(255, b)),
+            a: clamp01(a)
+        };
+    }
+
+    return null;
+}
+
+function formatColorComponents({ r, g, b, a }) {
+    const red = Math.round(Math.max(0, Math.min(255, r)));
+    const green = Math.round(Math.max(0, Math.min(255, g)));
+    const blue = Math.round(Math.max(0, Math.min(255, b)));
+    const alpha = a !== undefined ? clamp01(a) : 1;
+
+    if(Math.abs(alpha - 1) < 0.01) {
+        const toHex = value => value.toString(16).padStart(2, '0');
+        return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+    }
+
+    const formattedAlpha = Math.round(alpha * 100) / 100;
+    return `rgba(${red}, ${green}, ${blue}, ${formattedAlpha})`;
+}
+
+function blendColorValues(dayValue, nightValue, blend) {
+    const dayColor = parseColorString(dayValue);
+    const nightColor = parseColorString(nightValue);
+
+    if(dayColor && nightColor) {
+        const weightNight = 1 - blend;
+        return formatColorComponents({
+            r: nightColor.r * weightNight + dayColor.r * blend,
+            g: nightColor.g * weightNight + dayColor.g * blend,
+            b: nightColor.b * weightNight + dayColor.b * blend,
+            a: (nightColor.a ?? 1) * weightNight + (dayColor.a ?? 1) * blend
+        });
+    }
+
+    if(dayColor) {
+        return formatColorComponents(dayColor);
+    }
+
+    if(nightColor) {
+        return formatColorComponents(nightColor);
+    }
+
+    if(dayValue === undefined) return nightValue;
+    if(nightValue === undefined) return dayValue;
+
+    return blend >= 0.5 ? dayValue : nightValue;
+}
+
+function blendPalettes(dayPalette, nightPalette, blend) {
+    const result = {};
+    const keys = new Set([
+        ...Object.keys(nightPalette || {}),
+        ...Object.keys(dayPalette || {})
+    ]);
+
+    keys.forEach(key => {
+        const dayValue = dayPalette ? dayPalette[key] : undefined;
+        const nightValue = nightPalette ? nightPalette[key] : undefined;
+
+        if(typeof dayValue === 'string' && typeof nightValue === 'string') {
+            result[key] = blendColorValues(dayValue, nightValue, blend);
+            return;
+        }
+
+        if(typeof dayValue === 'number' && typeof nightValue === 'number') {
+            result[key] = nightValue + (dayValue - nightValue) * blend;
+            return;
+        }
+
+        result[key] = blend >= 0.5
+            ? (dayValue !== undefined ? dayValue : nightValue)
+            : (nightValue !== undefined ? nightValue : dayValue);
+    });
+
+    return result;
+}
+
+function getCurrentPalette(timeState = game.timeState || computeDayNightState()) {
+    const themeName = stageThemeByStage[game.stage] || 'forest';
+    const theme = stageThemes[themeName] || stageThemes.forest;
+    const dayPalette = (theme.day || stageThemes.forest.day);
+    const nightPalette = theme.night || stageThemes.forest.night || dayPalette;
+    const blend = timeState ? timeState.blend : (game.isDay ? 1 : 0);
+    const base = blendPalettes(dayPalette, nightPalette, blend);
+
+    return { ...base, themeName, blend };
+}
+
+function initCloudLayers(options = {}) {
+    const { timeState = game.timeState || computeDayNightState(), palette = getCurrentPalette(timeState), preserveBlobs = false } = options;
+    const baseConfigs = [];
+
+    const isBright = timeState.blend >= 0.5;
+    const minCount = isBright ? 4 : 5;
+    const maxCount = isBright ? 7 : 8;
+    const primaryColor = palette.cloudLight || '#ffffff';
+    const secondaryColor = palette.cloudDark || '#b0c4de';
+
+    const layerPresets = {
+        puffy: [
+            { count: minCount, speed: 0.15, yRange: [40, 120], variance: 0.8 },
+            { count: maxCount, speed: 0.35, yRange: [110, 190], variance: 1.1 }
+        ],
+        layered: [
+            { count: minCount + 1, speed: 0.1, yRange: [60, 140], variance: 0.6 },
+            { count: maxCount - 1, speed: 0.25, yRange: [140, 210], variance: 0.9 }
+        ],
+        ridges: [
+            { count: maxCount, speed: 0.2, yRange: [70, 150], variance: 0.5 },
+            { count: maxCount + 1, speed: 0.4, yRange: [150, 210], variance: 0.7 }
+        ],
+        plume: [
+            { count: maxCount, speed: 0.22, yRange: [70, 150], variance: 1.2 },
+            { count: maxCount + 1, speed: 0.4, yRange: [150, 210], variance: 1.4 }
+        ],
+        plumeNight: [
+            { count: maxCount + 2, speed: 0.25, yRange: [60, 140], variance: 1.4 },
+            { count: maxCount + 1, speed: 0.45, yRange: [140, 200], variance: 1.6 }
+        ],
+        aurora: [
+            { count: maxCount + 1, speed: 0.08, yRange: [40, 120], variance: 0.5 },
+            { count: maxCount + 2, speed: 0.18, yRange: [120, 180], variance: 0.7 }
+        ],
+        shard: [
+            { count: maxCount, speed: 0.18, yRange: [60, 150], variance: 0.9 },
+            { count: maxCount, speed: 0.32, yRange: [140, 210], variance: 1.3 }
+        ],
+        storm: [
+            { count: maxCount + 2, speed: 0.2, yRange: [50, 120], variance: 0.7 },
+            { count: maxCount + 3, speed: 0.38, yRange: [130, 200], variance: 1.0 }
+        ],
+        smoke: [
+            { count: maxCount, speed: 0.3, yRange: [80, 160], variance: 1.2 },
+            { count: maxCount + 1, speed: 0.5, yRange: [140, 220], variance: 1.5 }
+        ],
+        ash: [
+            { count: maxCount + 1, speed: 0.28, yRange: [70, 150], variance: 1.2 },
+            { count: maxCount + 2, speed: 0.48, yRange: [140, 220], variance: 1.6 }
+        ],
+        wispy: [
+            { count: minCount + 2, speed: 0.12, yRange: [50, 140], variance: 0.6 },
+            { count: maxCount + 1, speed: 0.26, yRange: [120, 200], variance: 0.8 }
+        ]
+    };
+
+    const presetKey = palette.cloudStyle === 'ash' && !isBright ? 'plumeNight' : palette.cloudStyle || 'puffy';
+    (layerPresets[presetKey] || layerPresets.puffy).forEach(config => baseConfigs.push(config));
+
+    const previousLayers = preserveBlobs ? game.cloudLayers : null;
+
+    game.cloudLayers = baseConfigs.map((config, index) => {
+        const prevLayer = previousLayers && previousLayers[index];
+        const newRange = config.yRange;
+        const newSpan = Math.max(1, newRange[1] - newRange[0]);
+
+        const blobs = [];
+        if(prevLayer && Array.isArray(prevLayer.blobs)) {
+            for(let i = 0; i < config.count; i++) {
+                const prevBlob = prevLayer.blobs[i];
+                if(prevBlob) {
+                    blobs.push({
+                        x: prevBlob.x,
+                        y: Math.max(newRange[0], Math.min(newRange[1], prevBlob.y)),
+                        width: prevBlob.width,
+                        height: prevBlob.height,
+                        wobble: prevBlob.wobble,
+                        offset: prevBlob.offset
+                    });
+                } else {
+                    blobs.push({
+                        x: Math.random() * canvas.width,
+                        y: newRange[0] + Math.random() * newSpan,
+                        width: 40 + Math.random() * 60,
+                        height: 14 + Math.random() * 8,
+                        wobble: Math.random() * Math.PI * 2,
+                        offset: Math.random() * 30
+                    });
+                }
+            }
+        } else {
+            for(let i = 0; i < config.count; i++) {
+                blobs.push({
+                    x: Math.random() * canvas.width,
+                    y: newRange[0] + Math.random() * newSpan,
+                    width: 40 + Math.random() * 60,
+                    height: 14 + Math.random() * 8,
+                    wobble: Math.random() * Math.PI * 2,
+                    offset: Math.random() * 30
+                });
+            }
+        }
+
+        return {
+            speed: config.speed,
+            variance: config.variance,
+            yRange: [newRange[0], newRange[1]],
+            primaryColor,
+            secondaryColor,
+            blobs
+        };
+    });
+}
+
+function initAmbientParticles(options = {}) {
+    const { timeState = game.timeState || computeDayNightState(), palette = getCurrentPalette(timeState) } = options;
+    game.pollenMotes = [];
+    game.fireflies = [];
+
+    if(timeState.blend >= 0.5) {
+        const particleColor = palette.pollenColor || '#ffe0a3';
+        for(let i = 0; i < 35; i++) {
+            game.pollenMotes.push({
+                x: Math.random() * canvas.width,
+                y: 200 + Math.random() * 160,
+                size: 2 + Math.random() * 2,
+                sway: Math.random() * Math.PI * 2,
+                speed: 0.3 + Math.random() * 0.2,
+                color: particleColor
+            });
+        }
+    } else {
+        const fireflyColor = palette.fireflyColor || '#aef7ff';
+        for(let i = 0; i < 45; i++) {
+            game.fireflies.push({
+                x: Math.random() * canvas.width,
+                y: 230 + Math.random() * 120,
+                phase: Math.random() * Math.PI * 2,
+                radius: 1 + Math.random() * 2,
+                color: fireflyColor,
+                drift: (Math.random() * 0.5 + 0.2) * (Math.random() > 0.5 ? 1 : -1)
+            });
+        }
+    }
+}
+
+function refreshEnvironment(timeState = game.timeState || computeDayNightState(), options = {}) {
+    const { regenerateClouds = false } = options;
+    game.timeState = timeState;
+    game.isDay = timeState.blend >= 0.5;
+
+    const palette = getCurrentPalette(timeState);
+    initCloudLayers({ timeState, palette, preserveBlobs: !regenerateClouds && game.cloudLayers.length > 0 });
+    initAmbientParticles({ timeState, palette });
+}
+
+function drawCloudBlob(style, primary, secondary, x, y, width, height, wobble, variance) {
+    const step = Math.max(3, Math.floor(width / 18));
+    const pixelWidth = Math.max(6, Math.floor(width / step));
+    const baseY = Math.floor(y);
+    const baseX = Math.floor(x);
+    const h = Math.floor(height);
+
+    ctx.fillStyle = primary;
+    ctx.fillRect(baseX, baseY, Math.floor(width), h);
+
+    for(let i = 0; i < step; i++) {
+        const localHeight = Math.max(6, Math.floor(h * (0.55 + Math.sin(wobble + i) * 0.15 * variance)));
+        const offsetX = baseX + i * pixelWidth - 4;
+        const topY = baseY - Math.floor(localHeight * 0.4);
+        ctx.fillRect(offsetX, topY, pixelWidth + 8, localHeight);
+    }
+
+    ctx.fillStyle = secondary;
+    ctx.fillRect(baseX + 4, baseY + h - 6, Math.floor(width) - 8, 6);
+
+    if(style === 'aurora') {
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = secondary;
+        for(let i = 0; i < step; i++) {
+            const barHeight = Math.floor(h * (0.6 + Math.sin(wobble * 1.6 + i) * 0.25));
+            ctx.fillRect(baseX + i * pixelWidth, baseY - barHeight, pixelWidth - 2, barHeight);
+        }
+        ctx.globalAlpha = 1;
+    } else if(style === 'shard') {
+        ctx.fillStyle = secondary;
+        for(let i = 0; i < step; i++) {
+            const shardHeight = Math.floor(h * (0.5 + Math.sin(wobble + i * 0.5) * 0.2));
+            ctx.fillRect(baseX + i * pixelWidth, baseY - shardHeight, pixelWidth - 3, shardHeight);
+        }
+    } else if(style === 'storm') {
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#ffffff';
+        for(let i = 0; i < step; i += 2) {
+            const boltHeight = Math.floor(h * (0.8 + Math.sin(wobble + i) * 0.2));
+            ctx.fillRect(baseX + i * pixelWidth + 2, baseY - boltHeight, 2, boltHeight);
+        }
+        ctx.globalAlpha = 1;
+    } else if(style === 'smoke' || style === 'ash' || style === 'plume') {
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = secondary;
+        for(let i = 0; i < step; i++) {
+            const plumeHeight = Math.floor(h * (0.7 + Math.sin(wobble * 1.5 + i * 0.7) * 0.25));
+            ctx.fillRect(baseX + i * pixelWidth + 2, baseY - plumeHeight, pixelWidth - 3, plumeHeight);
+        }
+        ctx.globalAlpha = 1;
+    }
+}
+
+function drawCloudLayersOnCanvas(palette) {
+    const style = palette.cloudStyle || 'puffy';
+    game.cloudLayers.forEach(layer => {
+        layer.primaryColor = palette.cloudLight || layer.primaryColor;
+        layer.secondaryColor = palette.cloudDark || layer.secondaryColor;
+        layer.blobs.forEach(blob => {
+            if(!game.isGameOver) {
+                blob.x += layer.speed;
+                blob.wobble += 0.01 * layer.variance;
+            }
+
+            if(blob.x > canvas.width + 80) {
+                blob.x = -60 - Math.random() * 40;
+            }
+
+            const wobbleY = Math.sin(blob.wobble) * 6 * layer.variance;
+            drawCloudBlob(style, layer.primaryColor, layer.secondaryColor, blob.x, blob.y + wobbleY, blob.width, blob.height, blob.wobble, layer.variance);
+        });
+    });
+    ctx.globalAlpha = 1;
+}
+
+function drawAmbientParticles() {
+    const timeState = game.timeState || computeDayNightState();
+    const dayStrength = Math.min(1, Math.max(0, timeState.dayStrength));
+    const nightStrength = Math.min(1, Math.max(0, timeState.nightStrength));
+
+    if(game.pollenMotes.length && dayStrength > 0) {
+        game.pollenMotes.forEach(mote => {
+            if(!game.isGameOver) {
+                mote.x += mote.speed;
+                mote.sway += 0.015;
+                if(mote.x > canvas.width + 20) {
+                    mote.x = -20;
+                    mote.y = 220 + Math.random() * 140;
+                }
+            }
+
+            const swayY = Math.sin(mote.sway) * 8;
+            const alpha = 0.2 + (Math.sin(mote.sway * 2) * 0.15 + 0.15);
+            ctx.globalAlpha = alpha * dayStrength;
+            ctx.fillStyle = mote.color;
+            ctx.fillRect(Math.floor(mote.x), Math.floor(mote.y + swayY), mote.size, mote.size);
+        });
+    }
+
+    if(game.fireflies.length && nightStrength > 0) {
+        game.fireflies.forEach(firefly => {
+            if(!game.isGameOver) {
+                firefly.phase += 0.08;
+                firefly.x += firefly.drift;
+                if(firefly.x < -10) firefly.x = canvas.width + 10;
+                if(firefly.x > canvas.width + 10) firefly.x = -10;
+            }
+
+            const glow = (Math.sin(firefly.phase) + 1) / 2;
+            const bob = Math.sin(firefly.phase * 0.6) * 6;
+            const primaryAlpha = (0.3 + glow * 0.6) * nightStrength;
+            const trailAlpha = (0.2 + glow * 0.3) * nightStrength;
+            const size = Math.ceil(firefly.radius + glow * 2);
+
+            if(primaryAlpha > 0) {
+                ctx.globalAlpha = primaryAlpha;
+                ctx.fillStyle = firefly.color;
+                ctx.fillRect(Math.floor(firefly.x), Math.floor(firefly.y + bob), size, size);
+            }
+
+            if(trailAlpha > 0) {
+                ctx.globalAlpha = trailAlpha;
+                ctx.fillRect(Math.floor(firefly.x - 1), Math.floor(firefly.y + bob - 1), size + 2, size + 2);
+            }
+        });
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawMountainLayer(themeName, palette, offset) {
+    const spacing = 200;
+    for(let x = -800; x < canvas.width + 800; x += spacing) {
+        const baseX = x - offset;
+        if(themeName === 'volcano' || themeName === 'molten') {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX, 280);
+            ctx.lineTo(baseX + 60, 160);
+            ctx.lineTo(baseX + 90, 200);
+            ctx.lineTo(baseX + 120, 150);
+            ctx.lineTo(baseX + 180, 280);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 60, 160);
+            ctx.lineTo(baseX + 90, 200);
+            ctx.lineTo(baseX + 105, 210);
+            ctx.lineTo(baseX + 90, 170);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 120, 150);
+            ctx.lineTo(baseX + 150, 210);
+            ctx.lineTo(baseX + 180, 280);
+            ctx.fill();
+        } else if(themeName === 'dragon') {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX, 280);
+            ctx.lineTo(baseX + 40, 190);
+            ctx.lineTo(baseX + 90, 210);
+            ctx.lineTo(baseX + 120, 140);
+            ctx.lineTo(baseX + 180, 200);
+            ctx.lineTo(baseX + 220, 140);
+            ctx.lineTo(baseX + 260, 280);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 90, 210);
+            ctx.lineTo(baseX + 120, 140);
+            ctx.lineTo(baseX + 150, 180);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 180, 200);
+            ctx.lineTo(baseX + 220, 140);
+            ctx.lineTo(baseX + 240, 220);
+            ctx.fill();
+        } else if(themeName === 'tundra' || themeName === 'crystal') {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX, 280);
+            ctx.lineTo(baseX + 70, 150);
+            ctx.lineTo(baseX + 120, 180);
+            ctx.lineTo(baseX + 160, 120);
+            ctx.lineTo(baseX + 220, 280);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 70, 150);
+            ctx.lineTo(baseX + 120, 180);
+            ctx.lineTo(baseX + 130, 170);
+            ctx.lineTo(baseX + 100, 140);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 160, 120);
+            ctx.lineTo(baseX + 200, 180);
+            ctx.lineTo(baseX + 220, 280);
+            ctx.fill();
+        } else if(themeName === 'shadow' || themeName === 'storm') {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX, 280);
+            ctx.lineTo(baseX + 50, 180);
+            ctx.lineTo(baseX + 80, 220);
+            ctx.lineTo(baseX + 130, 160);
+            ctx.lineTo(baseX + 170, 210);
+            ctx.lineTo(baseX + 210, 150);
+            ctx.lineTo(baseX + 250, 280);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 80, 220);
+            ctx.lineTo(baseX + 130, 160);
+            ctx.lineTo(baseX + 145, 200);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 170, 210);
+            ctx.lineTo(baseX + 210, 150);
+            ctx.lineTo(baseX + 230, 220);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX, 280);
+            ctx.lineTo(baseX + 80, 180);
+            ctx.lineTo(baseX + 160, 280);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 40, 210);
+            ctx.lineTo(baseX + 80, 180);
+            ctx.lineTo(baseX + 90, 210);
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 80, 180);
+            ctx.lineTo(baseX + 120, 220);
+            ctx.lineTo(baseX + 160, 280);
+            ctx.fill();
+        }
+    }
+}
+
+function drawMidgroundLayer(themeName, palette, offset) {
+    for(let x = -600; x < canvas.width + 600; x += 100) {
+        const baseX = x - offset;
+        if(themeName === 'volcano' || themeName === 'molten' || themeName === 'dragon') {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 36, 250, 24, 82);
+            ctx.fillRect(baseX + 32, 240, 32, 12);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 40, 242, 6, 40);
+
+            const nightStrength = game.timeState ? game.timeState.nightStrength : (game.isDay ? 0 : 1);
+            if(nightStrength > 0.05) {
+                const glow = (Math.sin(Date.now() / 200 + x * 0.02) * 0.2 + 0.8) * nightStrength;
+                ctx.globalAlpha = glow;
+                ctx.fillStyle = '#ff8a3b';
+                ctx.fillRect(baseX + 44, 280, 6, 30);
+                ctx.globalAlpha = 1;
+            }
+        } else if(themeName === 'tundra' || themeName === 'crystal') {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 42, 260, 12, 70);
+            ctx.fillRect(baseX + 38, 250, 20, 14);
+            ctx.fillRect(baseX + 36, 240, 24, 12);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 46, 270, 4, 60);
+        } else if(themeName === 'shadow' || themeName === 'storm') {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 38, 260, 14, 70);
+            ctx.fillRect(baseX + 32, 250, 26, 16);
+            ctx.fillRect(baseX + 28, 240, 32, 14);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 42, 268, 8, 62);
+        } else if(themeName === 'necropolis') {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 36, 270, 20, 60);
+            ctx.fillRect(baseX + 30, 260, 32, 18);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 44, 278, 6, 52);
+        } else {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 40, 280, 15, 50);
+            ctx.beginPath();
+            ctx.moveTo(baseX + 30, 280);
+            ctx.lineTo(baseX + 47, 250);
+            ctx.lineTo(baseX + 65, 280);
+            ctx.fill();
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 32, 270);
+            ctx.lineTo(baseX + 47, 240);
+            ctx.lineTo(baseX + 56, 270);
+            ctx.fill();
+        }
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawForegroundLayer(themeName, palette, offset) {
+    for(let x = -400; x < canvas.width + 400; x += 80) {
+        const baseX = x - offset;
+        if(themeName === 'volcano' || themeName === 'molten' || themeName === 'dragon') {
+            const time = Date.now() / 300 + x * 0.02;
+            const glow = Math.sin(time) * 0.3 + 0.7;
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 10, 325, 30, 10);
+            ctx.fillRect(baseX + 18, 315, 16, 10);
+
+            ctx.fillStyle = '#ffb347';
+            ctx.fillRect(baseX + 18, 327, 14, 4);
+            ctx.globalAlpha = 1;
+        } else if(themeName === 'tundra' || themeName === 'crystal') {
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 12, 320, 28, 20);
+            ctx.fillRect(baseX + 6, 330, 36, 12);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 18, 332, 12, 16);
+        } else if(themeName === 'shadow' || themeName === 'storm') {
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 8, 320, 34, 18);
+            ctx.fillRect(baseX + 2, 330, 44, 16);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 16, 334, 16, 12);
+        } else if(themeName === 'necropolis') {
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 12, 320, 32, 16);
+            ctx.fillRect(baseX + 6, 330, 36, 14);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 20, 332, 12, 12);
+        } else {
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 10, 320, 30, 20);
+            ctx.fillRect(baseX + 5, 330, 40, 15);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 18, 332, 12, 12);
+        }
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawForegroundAccents(themeName, palette, offset) {
+    const accent = palette.accentType || 'flowers';
+    for(let x = -120; x < canvas.width + 120; x += 60) {
+        const baseX = x - offset;
+        const groundY = 338;
+
+        if(accent === 'flowers') {
+            ctx.fillStyle = '#ffb3c1';
+            ctx.fillRect(baseX + 10, groundY, 3, 3);
+            ctx.fillRect(baseX + 14, groundY + 2, 2, 2);
+            ctx.fillStyle = '#ffd166';
+            ctx.fillRect(baseX + 18, groundY + 1, 2, 2);
+        } else if(accent === 'mushrooms') {
+            ctx.fillStyle = '#c77dff';
+            ctx.fillRect(baseX + 12, groundY, 6, 3);
+            ctx.fillStyle = '#ffe0ff';
+            ctx.fillRect(baseX + 14, groundY - 4, 2, 4);
+        } else if(accent === 'stone') {
+            ctx.fillStyle = '#9099a1';
+            ctx.fillRect(baseX + 8, groundY + 3, 10, 6);
+            ctx.fillStyle = '#6f7780';
+            ctx.fillRect(baseX + 10, groundY + 1, 6, 4);
+        } else if(accent === 'runestone') {
+            ctx.fillStyle = '#7e8fa1';
+            ctx.fillRect(baseX + 8, groundY - 6, 10, 12);
+            ctx.fillStyle = '#c5e4ff';
+            ctx.fillRect(baseX + 11, groundY - 2, 4, 4);
+        } else if(accent === 'smoke' || accent === 'embers' || accent === 'lava') {
+            const pulse = Math.sin(Date.now() / 180 + x * 0.1) * 0.3 + 0.7;
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = '#ff9a3c';
+            ctx.fillRect(baseX + 14, groundY - 10, 4, 10);
+            ctx.fillRect(baseX + 10, groundY - 6, 3, 6);
+            ctx.fillStyle = '#ffd166';
+            ctx.fillRect(baseX + 14, groundY - 4, 4, 4);
+            ctx.globalAlpha = 1;
+        } else if(accent === 'ice' || accent === 'aurora') {
+            ctx.fillStyle = '#e1f7ff';
+            ctx.fillRect(baseX + 12, groundY - 12, 6, 12);
+            ctx.fillStyle = '#b0eaff';
+            ctx.fillRect(baseX + 10, groundY - 6, 10, 6);
+        } else if(accent === 'runes' || accent === 'wisp') {
+            ctx.fillStyle = '#d9a6ff';
+            ctx.fillRect(baseX + 12, groundY - 8, 4, 8);
+            ctx.globalAlpha = 0.6;
+            ctx.fillRect(baseX + 11, groundY - 10, 6, 2);
+            ctx.globalAlpha = 1;
+        } else if(accent === 'crystal') {
+            ctx.fillStyle = '#89f0ff';
+            ctx.fillRect(baseX + 12, groundY - 14, 4, 14);
+            ctx.fillRect(baseX + 18, groundY - 10, 3, 10);
+            ctx.fillStyle = '#c1f7ff';
+            ctx.fillRect(baseX + 12, groundY - 6, 9, 3);
+        } else if(accent === 'thunder' || accent === 'lightning') {
+            ctx.fillStyle = '#9fc9ff';
+            ctx.fillRect(baseX + 14, groundY - 12, 2, 12);
+            ctx.fillRect(baseX + 16, groundY - 8, 2, 8);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(baseX + 12, groundY - 10, 2, 10);
+        } else if(accent === 'tomb') {
+            ctx.fillStyle = '#b0bab1';
+            ctx.fillRect(baseX + 10, groundY - 12, 8, 12);
+            ctx.fillStyle = '#dfe6dd';
+            ctx.fillRect(baseX + 12, groundY - 8, 4, 4);
+        } else if(accent === 'gravefire') {
+            const flicker = Math.sin(Date.now() / 200 + x * 0.13) * 0.3 + 0.7;
+            ctx.globalAlpha = flicker;
+            ctx.fillStyle = '#6fffdc';
+            ctx.fillRect(baseX + 12, groundY - 10, 4, 10);
+            ctx.fillStyle = '#a3fff0';
+            ctx.fillRect(baseX + 11, groundY - 6, 6, 4);
+            ctx.globalAlpha = 1;
+        } else if(accent === 'scales') {
+            ctx.fillStyle = '#ff9f6a';
+            ctx.fillRect(baseX + 10, groundY, 4, 4);
+            ctx.fillRect(baseX + 16, groundY - 4, 4, 4);
+            ctx.fillRect(baseX + 22, groundY, 4, 4);
+        }
+    }
+    ctx.globalAlpha = 1;
 }
 
 // Create squeak sound effect using Web Audio API
@@ -171,12 +1005,472 @@ const stageNames = [
     'Dragon\'s Lair'
 ];
 
+const stageThemeByStage = {
+    1: 'forest',
+    2: 'mountain',
+    3: 'volcano',
+    4: 'tundra',
+    5: 'shadow',
+    6: 'crystal',
+    7: 'storm',
+    8: 'molten',
+    9: 'necropolis',
+    10: 'dragon'
+};
+
+const stageThemes = {
+    forest: {
+        day: {
+            skyTop: '#6ec1ff',
+            skyBottom: '#cfe8ff',
+            horizon: 'rgba(255, 255, 255, 0.4)',
+            mountains: '#4b6b7a',
+            mountainHighlight: '#7fa3b5',
+            mountainShadow: '#2f4754',
+            trees: '#2f6b3b',
+            treeShadow: '#21492a',
+            bushes: '#3f7e35',
+            bushShadow: '#2c5724',
+            ground: '#5c3b20',
+            groundHighlight: '#7e5931',
+            grass: '#4caf50',
+            grassHighlight: '#84d66a',
+            cloudLight: '#ffffff',
+            cloudDark: '#d6eeff',
+            accentType: 'flowers',
+            pollenColor: '#ffe066',
+            cloudStyle: 'puffy'
+        },
+        night: {
+            skyTop: '#201442',
+            skyBottom: '#1b2d4f',
+            horizon: 'rgba(64, 115, 158, 0.35)',
+            mountains: '#16243a',
+            mountainHighlight: '#203a52',
+            mountainShadow: '#0d1724',
+            trees: '#1f3a28',
+            treeShadow: '#0f2416',
+            bushes: '#224330',
+            bushShadow: '#14281b',
+            ground: '#172417',
+            groundHighlight: '#243627',
+            grass: '#1f4b2b',
+            grassHighlight: '#2f6b3b',
+            cloudLight: '#5d6fa3',
+            cloudDark: '#2a3558',
+            accentType: 'mushrooms',
+            fireflyColor: '#9fffe2',
+            cloudStyle: 'wispy'
+        }
+    },
+    mountain: {
+        day: {
+            skyTop: '#8fd1ff',
+            skyBottom: '#d6f1ff',
+            horizon: 'rgba(200, 234, 255, 0.6)',
+            mountains: '#4d5f78',
+            mountainHighlight: '#8aa3c1',
+            mountainShadow: '#2d3949',
+            trees: '#476465',
+            treeShadow: '#2f4141',
+            bushes: '#4f706b',
+            bushShadow: '#36504d',
+            ground: '#6b5f4a',
+            groundHighlight: '#8f7a58',
+            grass: '#6f9e6f',
+            grassHighlight: '#95c792',
+            cloudLight: '#ffffff',
+            cloudDark: '#d6e1ff',
+            accentType: 'stone',
+            pollenColor: '#d0f4ff',
+            cloudStyle: 'layered'
+        },
+        night: {
+            skyTop: '#101820',
+            skyBottom: '#1c2935',
+            horizon: 'rgba(120, 160, 200, 0.25)',
+            mountains: '#1c242e',
+            mountainHighlight: '#2c3a4a',
+            mountainShadow: '#0d1116',
+            trees: '#273238',
+            treeShadow: '#161c20',
+            bushes: '#2c3c44',
+            bushShadow: '#141c20',
+            ground: '#1d2227',
+            groundHighlight: '#2e3a42',
+            grass: '#233235',
+            grassHighlight: '#2f4447',
+            cloudLight: '#566d82',
+            cloudDark: '#243442',
+            accentType: 'runestone',
+            fireflyColor: '#78f7ff',
+            cloudStyle: 'ridges'
+        }
+    },
+    volcano: {
+        day: {
+            skyTop: '#f88b4f',
+            skyBottom: '#f6d187',
+            horizon: 'rgba(255, 171, 64, 0.35)',
+            mountains: '#5a2c29',
+            mountainHighlight: '#a44a3c',
+            mountainShadow: '#381917',
+            trees: '#6e3f28',
+            treeShadow: '#3d2318',
+            bushes: '#7e4e2a',
+            bushShadow: '#4c2b18',
+            ground: '#4c1e14',
+            groundHighlight: '#783023',
+            grass: '#c46a2b',
+            grassHighlight: '#f08f3a',
+            cloudLight: '#ffe1c4',
+            cloudDark: '#f7a56a',
+            accentType: 'smoke',
+            pollenColor: '#ffbe76',
+            cloudStyle: 'plume'
+        },
+        night: {
+            skyTop: '#2d0d1b',
+            skyBottom: '#4a1626',
+            horizon: 'rgba(255, 94, 58, 0.25)',
+            mountains: '#240a12',
+            mountainHighlight: '#3d121d',
+            mountainShadow: '#120408',
+            trees: '#351613',
+            treeShadow: '#1e0b0a',
+            bushes: '#441912',
+            bushShadow: '#240b07',
+            ground: '#210806',
+            groundHighlight: '#3d130d',
+            grass: '#5c1e15',
+            grassHighlight: '#8b3622',
+            cloudLight: '#f06d3d',
+            cloudDark: '#8f2b2c',
+            accentType: 'embers',
+            fireflyColor: '#ffbc5e',
+            cloudStyle: 'ash'
+        }
+    },
+    tundra: {
+        day: {
+            skyTop: '#a4e4ff',
+            skyBottom: '#e1f5ff',
+            horizon: 'rgba(255, 255, 255, 0.65)',
+            mountains: '#6f90b9',
+            mountainHighlight: '#c9e0ff',
+            mountainShadow: '#3e5570',
+            trees: '#9ad2f2',
+            treeShadow: '#6ba3c4',
+            bushes: '#b0e3ff',
+            bushShadow: '#7fb3d1',
+            ground: '#d0e9ff',
+            groundHighlight: '#f5fbff',
+            grass: '#c8f1ff',
+            grassHighlight: '#ffffff',
+            cloudLight: '#ffffff',
+            cloudDark: '#cfe7ff',
+            accentType: 'ice',
+            pollenColor: '#ffffff',
+            cloudStyle: 'aurora'
+        },
+        night: {
+            skyTop: '#16244f',
+            skyBottom: '#203767',
+            horizon: 'rgba(120, 170, 255, 0.4)',
+            mountains: '#1d335e',
+            mountainHighlight: '#34548f',
+            mountainShadow: '#0c162b',
+            trees: '#264667',
+            treeShadow: '#13263b',
+            bushes: '#2c5679',
+            bushShadow: '#142b3f',
+            ground: '#1a2e47',
+            groundHighlight: '#27456a',
+            grass: '#23405f',
+            grassHighlight: '#3b6fa1',
+            cloudLight: '#7ab9ff',
+            cloudDark: '#35548f',
+            accentType: 'aurora',
+            fireflyColor: '#8bc9ff',
+            cloudStyle: 'aurora'
+        }
+    },
+    shadow: {
+        day: {
+            skyTop: '#6c3fb2',
+            skyBottom: '#b58df2',
+            horizon: 'rgba(210, 170, 255, 0.4)',
+            mountains: '#41235a',
+            mountainHighlight: '#6e3b8f',
+            mountainShadow: '#2a143c',
+            trees: '#4b2c6b',
+            treeShadow: '#2b1740',
+            bushes: '#5a357e',
+            bushShadow: '#371f52',
+            ground: '#2f1a43',
+            groundHighlight: '#472861',
+            grass: '#7447a5',
+            grassHighlight: '#9f68d9',
+            cloudLight: '#d7b1ff',
+            cloudDark: '#8c5cd9',
+            accentType: 'runes',
+            pollenColor: '#f8d8ff',
+            cloudStyle: 'wispy'
+        },
+        night: {
+            skyTop: '#1e0f33',
+            skyBottom: '#2f184a',
+            horizon: 'rgba(160, 110, 210, 0.35)',
+            mountains: '#140824',
+            mountainHighlight: '#27103f',
+            mountainShadow: '#0a0313',
+            trees: '#1d0f2f',
+            treeShadow: '#0e061a',
+            bushes: '#241338',
+            bushShadow: '#12071f',
+            ground: '#160c23',
+            groundHighlight: '#261339',
+            grass: '#271541',
+            grassHighlight: '#3f1f64',
+            cloudLight: '#5d3a8f',
+            cloudDark: '#2a184f',
+            accentType: 'wisp',
+            fireflyColor: '#f7abff',
+            cloudStyle: 'wispy'
+        }
+    },
+    crystal: {
+        day: {
+            skyTop: '#75d6ff',
+            skyBottom: '#d1faff',
+            horizon: 'rgba(148, 255, 255, 0.55)',
+            mountains: '#4c7d9e',
+            mountainHighlight: '#8dd3ff',
+            mountainShadow: '#2b4e66',
+            trees: '#3f6b8a',
+            treeShadow: '#26465a',
+            bushes: '#4f88a8',
+            bushShadow: '#2e5871',
+            ground: '#3f5d72',
+            groundHighlight: '#5c88a3',
+            grass: '#4fd6ff',
+            grassHighlight: '#96f6ff',
+            cloudLight: '#c9f6ff',
+            cloudDark: '#87d4f0',
+            accentType: 'crystal',
+            pollenColor: '#aef7ff',
+            cloudStyle: 'shard'
+        },
+        night: {
+            skyTop: '#101c40',
+            skyBottom: '#1c2e5a',
+            horizon: 'rgba(110, 210, 255, 0.4)',
+            mountains: '#0f1f36',
+            mountainHighlight: '#1f3a59',
+            mountainShadow: '#060d18',
+            trees: '#163045',
+            treeShadow: '#081725',
+            bushes: '#1c3f59',
+            bushShadow: '#0b1f2f',
+            ground: '#0f1a28',
+            groundHighlight: '#1a2f42',
+            grass: '#125a6c',
+            grassHighlight: '#1f91a7',
+            cloudLight: '#4cd0ff',
+            cloudDark: '#217896',
+            accentType: 'crystal',
+            fireflyColor: '#7cf3ff',
+            cloudStyle: 'shard'
+        }
+    },
+    storm: {
+        day: {
+            skyTop: '#4a6fb3',
+            skyBottom: '#9fbceb',
+            horizon: 'rgba(255, 255, 255, 0.35)',
+            mountains: '#384d78',
+            mountainHighlight: '#708cc0',
+            mountainShadow: '#232f4a',
+            trees: '#3b5474',
+            treeShadow: '#28394f',
+            bushes: '#456788',
+            bushShadow: '#304863',
+            ground: '#334056',
+            groundHighlight: '#4a5e7a',
+            grass: '#5e7da5',
+            grassHighlight: '#86a7cc',
+            cloudLight: '#f0f5ff',
+            cloudDark: '#7b8cb2',
+            accentType: 'thunder',
+            pollenColor: '#d2e3ff',
+            cloudStyle: 'storm'
+        },
+        night: {
+            skyTop: '#0b1426',
+            skyBottom: '#16233a',
+            horizon: 'rgba(120, 180, 255, 0.25)',
+            mountains: '#111d33',
+            mountainHighlight: '#1f3656',
+            mountainShadow: '#050a12',
+            trees: '#16253a',
+            treeShadow: '#0a1320',
+            bushes: '#1b2f44',
+            bushShadow: '#0c1624',
+            ground: '#101b2b',
+            groundHighlight: '#1b2c42',
+            grass: '#14283b',
+            grassHighlight: '#1f3d59',
+            cloudLight: '#4b6b9b',
+            cloudDark: '#1e2f47',
+            accentType: 'lightning',
+            fireflyColor: '#9fc9ff',
+            cloudStyle: 'storm'
+        }
+    },
+    molten: {
+        day: {
+            skyTop: '#d4582f',
+            skyBottom: '#f0a357',
+            horizon: 'rgba(255, 148, 76, 0.4)',
+            mountains: '#5a211a',
+            mountainHighlight: '#a23d2b',
+            mountainShadow: '#35120f',
+            trees: '#732e1f',
+            treeShadow: '#3f1610',
+            bushes: '#933a21',
+            bushShadow: '#561d11',
+            ground: '#3f140d',
+            groundHighlight: '#702317',
+            grass: '#d85c28',
+            grassHighlight: '#ff883d',
+            cloudLight: '#ffd1a3',
+            cloudDark: '#ff9352',
+            accentType: 'lava',
+            pollenColor: '#ffb169',
+            cloudStyle: 'ash'
+        },
+        night: {
+            skyTop: '#240403',
+            skyBottom: '#4a0f09',
+            horizon: 'rgba(255, 80, 0, 0.3)',
+            mountains: '#2f0502',
+            mountainHighlight: '#55130a',
+            mountainShadow: '#160201',
+            trees: '#3b0904',
+            treeShadow: '#200402',
+            bushes: '#4b0d06',
+            bushShadow: '#260502',
+            ground: '#1b0301',
+            groundHighlight: '#320905',
+            grass: '#7c1907',
+            grassHighlight: '#b3260b',
+            cloudLight: '#ff6b3b',
+            cloudDark: '#8f1f1f',
+            accentType: 'lava',
+            fireflyColor: '#ffdd6f',
+            cloudStyle: 'ash'
+        }
+    },
+    necropolis: {
+        day: {
+            skyTop: '#a0b3bf',
+            skyBottom: '#d7e1e7',
+            horizon: 'rgba(200, 220, 220, 0.5)',
+            mountains: '#6b7a80',
+            mountainHighlight: '#9aaab1',
+            mountainShadow: '#404a50',
+            trees: '#7d8a79',
+            treeShadow: '#495144',
+            bushes: '#8c9b86',
+            bushShadow: '#5b6655',
+            ground: '#757d6b',
+            groundHighlight: '#9aa38f',
+            grass: '#8fad7b',
+            grassHighlight: '#b7d39d',
+            cloudLight: '#f5f9fb',
+            cloudDark: '#c1ccd2',
+            accentType: 'tomb',
+            pollenColor: '#e5f4ff',
+            cloudStyle: 'layered'
+        },
+        night: {
+            skyTop: '#181b27',
+            skyBottom: '#262b38',
+            horizon: 'rgba(200, 220, 220, 0.2)',
+            mountains: '#1d222c',
+            mountainHighlight: '#2b3240',
+            mountainShadow: '#0b0d13',
+            trees: '#232a28',
+            treeShadow: '#101412',
+            bushes: '#28312d',
+            bushShadow: '#111814',
+            ground: '#1a2019',
+            groundHighlight: '#2e362a',
+            grass: '#263627',
+            grassHighlight: '#374d37',
+            cloudLight: '#48525e',
+            cloudDark: '#202630',
+            accentType: 'gravefire',
+            fireflyColor: '#94f5d8',
+            cloudStyle: 'layered'
+        }
+    },
+    dragon: {
+        day: {
+            skyTop: '#f6b56b',
+            skyBottom: '#ffe1a1',
+            horizon: 'rgba(255, 200, 120, 0.45)',
+            mountains: '#6f2f2f',
+            mountainHighlight: '#b85a3a',
+            mountainShadow: '#3c1414',
+            trees: '#793b2b',
+            treeShadow: '#451f16',
+            bushes: '#8f4a34',
+            bushShadow: '#53261a',
+            ground: '#582620',
+            groundHighlight: '#83382d',
+            grass: '#c5633d',
+            grassHighlight: '#f28a55',
+            cloudLight: '#ffd8b2',
+            cloudDark: '#f6975a',
+            accentType: 'scales',
+            pollenColor: '#ffcb7d',
+            cloudStyle: 'smoke'
+        },
+        night: {
+            skyTop: '#1a0303',
+            skyBottom: '#360808',
+            horizon: 'rgba(255, 80, 60, 0.35)',
+            mountains: '#220404',
+            mountainHighlight: '#3d0b0a',
+            mountainShadow: '#100101',
+            trees: '#2b0806',
+            treeShadow: '#150302',
+            bushes: '#360c08',
+            bushShadow: '#1b0403',
+            ground: '#1a0403',
+            groundHighlight: '#330806',
+            grass: '#680f0a',
+            grassHighlight: '#9e1b14',
+            cloudLight: '#ff5e3b',
+            cloudDark: '#821c1c',
+            accentType: 'embers',
+            fireflyColor: '#ffb86b',
+            cloudStyle: 'smoke'
+        }
+    }
+};
+
 // Draw pixel art witch on broomstick
 function drawWizard() {
     const x = 50;
     const y = 80;
     const bounce = Math.sin(Date.now() / 300) * 3;
     const windWave = Math.sin(Date.now() / 200);
+
+    if(game.isGameOver && !game.witchDeathAnim) {
+        return;
+    }
 
     // Death animation handling
     let scale = 1;
@@ -197,85 +1491,81 @@ function drawWizard() {
     ctx.scale(scale, scale);
     ctx.translate(-25, -25);
 
-    // Broomstick
-    ctx.fillStyle = '#8b4513';
-    ctx.fillRect(x + 5, y + 35 + bounce, 45, 4);
+    // Broomstick handle
+    ctx.fillStyle = '#7a4a1a';
+    ctx.fillRect(x - 10, y + 34 + bounce, 70, 5);
+    ctx.fillStyle = '#5f3610';
+    ctx.fillRect(x + 40, y + 33 + bounce, 20, 7);
 
-    // Broomstick bristles
-    ctx.fillStyle = '#d2691e';
-    for(let i = 0; i < 8; i++) {
-        const bristleFlow = Math.sin(Date.now() / 150 + i * 0.3) * 2;
-        ctx.fillRect(x - 5 + i * 2 + bristleFlow, y + 39 + bounce, 2, 6);
-        ctx.fillRect(x - 3 + i * 2 + bristleFlow, y + 43 + bounce, 2, 4);
+    // Broom binding and bristles
+    const sway = Math.sin(Date.now() / 160) * 2;
+    ctx.fillStyle = '#c48a3a';
+    ctx.fillRect(x - 8, y + 32 + bounce, 6, 10);
+    ctx.fillStyle = '#e0a647';
+    for(let i = 0; i < 5; i++) {
+        const offset = sway + i * 3;
+        ctx.fillRect(x - 20 + offset, y + 30 + bounce + i, 10, 3);
+        ctx.fillRect(x - 20 + offset, y + 36 + bounce + i, 12, 3);
     }
 
-    // Dress (flowing)
-    ctx.fillStyle = '#8b008b';
-    const dressFlow1 = Math.sin(Date.now() / 180) * 3;
-    const dressFlow2 = Math.sin(Date.now() / 200 + 0.5) * 4;
+    // Legs tucked along the broom
+    ctx.fillStyle = '#28122b';
+    ctx.fillRect(x + 20, y + 36 + bounce, 10, 6);
+    ctx.fillRect(x + 30, y + 36 + bounce, 12, 6);
+    ctx.fillRect(x + 42, y + 38 + bounce, 8, 4);
 
-    ctx.fillRect(x + 20, y + 10 + bounce, 18, 25);
-    ctx.fillRect(x + 18 + dressFlow1, y + 30 + bounce, 8, 10);
-    ctx.fillRect(x + 28 + dressFlow2, y + 30 + bounce, 8, 10);
-    ctx.fillRect(x + 16 + dressFlow1, y + 38 + bounce, 6, 6);
-    ctx.fillRect(x + 32 + dressFlow2, y + 38 + bounce, 6, 6);
+    // Dress billowing back
+    const dressWave = Math.sin(Date.now() / 190) * 3;
+    const dressTrail = Math.sin(Date.now() / 210 + 0.4) * 4;
+    ctx.fillStyle = '#5b1a6d';
+    ctx.fillRect(x + 18, y + 14 + bounce, 18, 18);
+    ctx.fillRect(x + 14 + dressWave, y + 20 + bounce, 12, 16);
+    ctx.fillRect(x + 10 + dressTrail, y + 24 + bounce, 10, 12);
+    ctx.fillStyle = '#732386';
+    ctx.fillRect(x + 20, y + 18 + bounce, 14, 12);
+    ctx.fillRect(x + 12 + dressWave, y + 28 + bounce, 12, 8);
 
-    // Body
-    ctx.fillStyle = '#ffd8b1';
-    ctx.fillRect(x + 24, y + 8 + bounce, 10, 12);
+    // Torso leaning forward
+    ctx.fillStyle = '#ffd6bc';
+    ctx.fillRect(x + 26, y + 12 + bounce, 8, 12);
 
-    // Arms
-    ctx.fillStyle = '#ffd8b1';
-    ctx.fillRect(x + 20, y + 10 + bounce, 4, 10);
-    ctx.fillRect(x + 34, y + 10 + bounce, 4, 10);
+    // Arms gripping the broomstick
+    ctx.fillRect(x + 18, y + 18 + bounce, 5, 6);
+    ctx.fillRect(x + 32, y + 18 + bounce, 5, 6);
+    ctx.fillRect(x + 21, y + 22 + bounce, 6, 4);
+    ctx.fillRect(x + 33, y + 22 + bounce, 6, 4);
 
-    // Hands on broomstick
-    ctx.fillRect(x + 16, y + 20 + bounce, 4, 4);
-    ctx.fillRect(x + 38, y + 20 + bounce, 4, 4);
+    // Hands wrapped around handle
+    ctx.fillRect(x + 16, y + 24 + bounce, 4, 4);
+    ctx.fillRect(x + 36, y + 24 + bounce, 4, 4);
 
-    // Head
-    ctx.fillStyle = '#ffd8b1';
-    ctx.fillRect(x + 22, y - 8 + bounce, 14, 16);
+    // Head looking forward
+    ctx.fillStyle = '#ffd6bc';
+    ctx.fillRect(x + 24, y - 6 + bounce, 12, 14);
+    ctx.fillRect(x + 32, y - 2 + bounce, 2, 8);
 
-    // Eyes
-    ctx.fillStyle = '#000';
-    ctx.fillRect(x + 25, y - 2 + bounce, 2, 2);
-    ctx.fillRect(x + 31, y - 2 + bounce, 2, 2);
+    // Eye and features facing forward
+    ctx.fillStyle = '#201020';
+    ctx.fillRect(x + 32, y + 0 + bounce, 2, 2);
+    ctx.fillRect(x + 28, y + 3 + bounce, 3, 1);
 
-    // Mouth
-    ctx.fillRect(x + 27, y + 3 + bounce, 4, 1);
+    // Long black hair streaming behind
+    const hairFlow = Math.sin(Date.now() / 140) * 4;
+    const hairRipple = Math.sin(Date.now() / 160 + 0.5) * 5;
+    ctx.fillStyle = '#0b0b15';
+    ctx.fillRect(x + 14 + hairFlow, y - 4 + bounce, 10, 12);
+    ctx.fillRect(x + 6 + hairRipple, y - 2 + bounce, 12, 10);
+    ctx.fillRect(x + 2 + hairRipple, y + 2 + bounce, 12, 8);
+    ctx.fillRect(x - 2 + hairFlow, y + 4 + bounce, 10, 6);
 
-    // Witch hat
-    ctx.fillStyle = '#000';
-    ctx.fillRect(x + 20, y - 12 + bounce, 18, 5);
-    ctx.fillRect(x + 24, y - 28 + bounce, 10, 16);
+    // Additional hair strands for motion
+    ctx.fillRect(x + 8 + hairRipple, y - 6 + bounce, 6, 6);
+    ctx.fillRect(x + 0 + hairFlow, y - 2 + bounce, 6, 8);
 
-    // Hat buckle
-    ctx.fillStyle = '#ffd700';
-    ctx.fillRect(x + 22, y - 10 + bounce, 14, 2);
-
-    // Hair flowing in wind (long flowing strands)
-    ctx.fillStyle = '#8b4513';
-    const hairFlow1 = Math.sin(Date.now() / 150) * 5;
-    const hairFlow2 = Math.sin(Date.now() / 180 + 0.3) * 6;
-    const hairFlow3 = Math.sin(Date.now() / 160 + 0.7) * 4;
-
-    // Left side hair
-    ctx.fillRect(x + 18 + hairFlow1, y - 6 + bounce, 3, 12);
-    ctx.fillRect(x + 16 + hairFlow2, y - 4 + bounce, 3, 16);
-    ctx.fillRect(x + 14 + hairFlow3, y - 2 + bounce, 3, 14);
-
-    // Right side hair
-    ctx.fillRect(x + 37 + hairFlow1, y - 6 + bounce, 3, 12);
-    ctx.fillRect(x + 39 + hairFlow2, y - 4 + bounce, 3, 16);
-    ctx.fillRect(x + 41 + hairFlow3, y - 2 + bounce, 3, 14);
-
-    // Cape flowing behind
-    ctx.fillStyle = '#4b0082';
-    const capeFlow1 = Math.sin(Date.now() / 170) * 4;
-    const capeFlow2 = Math.sin(Date.now() / 190 + 0.5) * 5;
-    ctx.fillRect(x + 10 + capeFlow1, y + 8 + bounce, 6, 18);
-    ctx.fillRect(x + 8 + capeFlow2, y + 12 + bounce, 5, 16);
+    // Wind-swept dress highlights
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(x + 18, y + 20 + bounce, 6, 10);
+    ctx.fillRect(x + 12 + dressTrail, y + 26 + bounce, 4, 8);
 
     // Magic sparkle
     if (game.spellEffect) {
@@ -1123,178 +2413,237 @@ function showStageAnnouncement(stageNum) {
     }, 2000);
 }
 
+function buildQuestionForStage(stage) {
+    switch(stage) {
+        case 1: {
+            const a = randInt(0, 10);
+            const b = randInt(0, 10 - a);
+            const sum = a + b;
+            return {
+                questionText: `${a} + ${b} = ?`,
+                correctAnswer: sum,
+                operands: [a, b],
+                answerRangeMax: 10,
+                key: `1|${a}|${b}`
+            };
+        }
+        case 2: {
+            const a = randInt(0, 10);
+            const b = randInt(0, a);
+            const diff = a - b;
+            return {
+                questionText: `${a} - ${b} = ?`,
+                correctAnswer: diff,
+                operands: [a, b],
+                answerRangeMax: 10,
+                key: `2|${a}|${b}`
+            };
+        }
+        case 3: {
+            const a = randInt(0, 10);
+            const missing = randInt(0, 10 - a);
+            const b = missing + a;
+            return {
+                questionText: `? + ${a} = ${b}`,
+                correctAnswer: missing,
+                operands: [a, b],
+                answerRangeMax: 10,
+                key: `3|${a}|${b}`
+            };
+        }
+        case 4: {
+            const a = randInt(0, 10);
+            const missing = randInt(0, a);
+            const b = a - missing;
+            return {
+                questionText: `${a} - ? = ${b}`,
+                correctAnswer: missing,
+                operands: [a, b],
+                answerRangeMax: 10,
+                key: `4|${a}|${b}`
+            };
+        }
+        case 5: {
+            const a = randInt(0, 20);
+            const b = randInt(0, 20 - a);
+            const sum = a + b;
+            return {
+                questionText: `${a} + ${b} = ?`,
+                correctAnswer: sum,
+                operands: [a, b],
+                answerRangeMax: 20,
+                key: `5|${a}|${b}`
+            };
+        }
+        case 6: {
+            const a = randInt(0, 20);
+            const b = randInt(0, a);
+            const diff = a - b;
+            return {
+                questionText: `${a} - ${b} = ?`,
+                correctAnswer: diff,
+                operands: [a, b],
+                answerRangeMax: 20,
+                key: `6|${a}|${b}`
+            };
+        }
+        case 7: {
+            const maxTotal = 10;
+            const a = randInt(0, maxTotal);
+            const remainingAfterA = maxTotal - a;
+            const b = randInt(0, remainingAfterA);
+            const c = randInt(0, maxTotal - a - b);
+            const sum = a + b + c;
+            return {
+                questionText: `${a} + ${b} + ${c} = ?`,
+                correctAnswer: sum,
+                operands: [a, b, c],
+                answerRangeMax: 10,
+                key: `7|${a}|${b}|${c}`
+            };
+        }
+        case 8: {
+            const maxTotal = 20;
+            const a = randInt(0, maxTotal);
+            const remainingAfterA = maxTotal - a;
+            const b = randInt(0, remainingAfterA);
+            const c = randInt(0, maxTotal - a - b);
+            const sum = a + b + c;
+            return {
+                questionText: `${a} + ${b} + ${c} = ?`,
+                correctAnswer: sum,
+                operands: [a, b, c],
+                answerRangeMax: 20,
+                key: `8|${a}|${b}|${c}`
+            };
+        }
+        case 9: {
+            const a = randInt(0, 30);
+            const b = randInt(0, 30 - a);
+            const sum = a + b;
+            return {
+                questionText: `${a} + ${b} = ?`,
+                correctAnswer: sum,
+                operands: [a, b],
+                answerRangeMax: 30,
+                key: `9|${a}|${b}`
+            };
+        }
+        case 10:
+        default: {
+            const a = randInt(0, 30);
+            const b = randInt(0, a);
+            const diff = a - b;
+            return {
+                questionText: `${a} - ${b} = ?`,
+                correctAnswer: diff,
+                operands: [a, b],
+                answerRangeMax: 30,
+                key: `10|${a}|${b}`
+            };
+        }
+    }
+}
+
+function determineOperationType(stage, questionData) {
+    const operands = questionData.operands || [];
+
+    if((stage === 1 || stage === 5 || stage === 9) && operands.length >= 2) {
+        if(operands[0] === operands[1]) {
+            return 'double-add';
+        }
+        return null;
+    }
+
+    if((stage === 2 || stage === 6 || stage === 10) && operands.length >= 2) {
+        if(operands[0] === operands[1]) {
+            return 'double-sub';
+        }
+        return null;
+    }
+
+    if((stage === 7 || stage === 8) && operands.length === 3) {
+        if(operands[0] === operands[1] && operands[1] === operands[2]) {
+            return 'triple-add';
+        }
+        return null;
+    }
+
+    return null;
+}
+
 // Generate math problem
 function generateProblem() {
-    let num1, num2, num3, correctAnswer, operator, questionFormat;
+    clearAnswerLock();
+    game.wrongAttemptCount = 0;
+
     let attempts = 0;
     const maxAttempts = 50;
+    let questionData = null;
+    let selectedOperationType = null;
+    let shouldRecordProblem = false;
 
-    // Generate problem that hasn't been used in last 3
     do {
         attempts++;
+        questionData = buildQuestionForStage(game.stage);
 
-        // Stage 1: Addition with result 0-10
-        if(game.stage === 1) {
-            num1 = Math.floor(Math.random() * 11); // 0-10
-            num2 = Math.floor(Math.random() * (11 - num1)); // 0 to (10-num1)
-            operator = '+';
-            correctAnswer = num1 + num2;
-            questionFormat = 'standard';
-        }
-        // Stage 2: Subtraction with operands max 10, result 0-10
-        else if(game.stage === 2) {
-            num1 = Math.floor(Math.random() * 11); // 0-10
-            num2 = Math.floor(Math.random() * (num1 + 1)); // 0 to num1
-            operator = '-';
-            correctAnswer = num1 - num2;
-            questionFormat = 'standard';
-        }
-        // Stage 3: Addition with result 0-20
-        else if(game.stage === 3) {
-            num1 = Math.floor(Math.random() * 21); // 0-20
-            num2 = Math.floor(Math.random() * (21 - num1)); // 0 to (20-num1)
-            operator = '+';
-            correctAnswer = num1 + num2;
-            questionFormat = 'standard';
-        }
-        // Stage 4: Subtraction without crossing tens (e.g., 15-4, not 11-2)
-        else if(game.stage === 4) {
-            num1 = Math.floor(Math.random() * 21); // 0-20
-            const unitsDigit = num1 % 10;
-            num2 = Math.floor(Math.random() * (unitsDigit + 1)); // 0 to units digit
-            operator = '-';
-            correctAnswer = num1 - num2;
-            questionFormat = 'standard';
-        }
-        // Stage 5: Addition 0-10, question mark on first or second position
-        else if(game.stage === 5) {
-            correctAnswer = Math.floor(Math.random() * 11); // 0-10
-            const questionPos = Math.random() < 0.5 ? 'first' : 'second';
-            if(questionPos === 'first') {
-                num2 = Math.floor(Math.random() * (11 - correctAnswer)); // 0 to (10-result)
-                num1 = correctAnswer - num2;
-                questionFormat = 'missingFirst';
-            } else {
-                num1 = Math.floor(Math.random() * (11 - correctAnswer)); // 0 to (10-result)
-                num2 = correctAnswer - num1;
-                questionFormat = 'missingSecond';
-            }
-            operator = '+';
-        }
-        // Stage 6: Subtraction 0-10, question mark on first or second position
-        else if(game.stage === 6) {
-            const questionPos = Math.random() < 0.5 ? 'first' : 'second';
-            if(questionPos === 'first') {
-                // ? - num2 = result → num1 = result + num2
-                correctAnswer = Math.floor(Math.random() * 11); // result 0-10
-                num2 = Math.floor(Math.random() * (11 - correctAnswer)); // 0 to (10-result)
-                num1 = correctAnswer + num2;
-                questionFormat = 'missingFirst';
-            } else {
-                // num1 - ? = result → num2 = num1 - result
-                num1 = Math.floor(Math.random() * 11); // 0-10
-                correctAnswer = Math.floor(Math.random() * (num1 + 1)); // 0 to num1
-                num2 = num1 - correctAnswer;
-                questionFormat = 'missingSecond';
-            }
-            operator = '-';
-        }
-        // Stage 7: Addition of 3 numbers, result 0-10
-        else if(game.stage === 7) {
-            correctAnswer = Math.floor(Math.random() * 11); // 0-10
-            num1 = Math.floor(Math.random() * (correctAnswer + 1));
-            const remaining = correctAnswer - num1;
-            num2 = Math.floor(Math.random() * (remaining + 1));
-            num3 = correctAnswer - num1 - num2;
-            operator = '+';
-            questionFormat = 'triple';
-        }
-        // Stage 8+: Addition of 3 numbers, result 0-20
-        else {
-            correctAnswer = Math.floor(Math.random() * 21); // 0-20
-            num1 = Math.floor(Math.random() * (correctAnswer + 1));
-            const remaining = correctAnswer - num1;
-            num2 = Math.floor(Math.random() * (remaining + 1));
-            num3 = correctAnswer - num1 - num2;
-            operator = '+';
-            questionFormat = 'triple';
-        }
+        const operandsUsedRecently = game.recentOperands.some(previous =>
+            previous.some(value => questionData.operands.includes(value))
+        );
 
-        // Check if this problem was used recently AND if operands were used recently
-        const problemKey = questionFormat === 'triple'
-            ? `${num1}${operator}${num2}${operator}${num3}`
-            : `${num1}${operator}${num2}${questionFormat}`;
-        const operandsUsedRecently = questionFormat === 'triple'
-            ? (game.recentOperands.includes(num1) || game.recentOperands.includes(num2) || game.recentOperands.includes(num3))
-            : (game.recentOperands.includes(num1) || game.recentOperands.includes(num2));
+        const operationType = determineOperationType(game.stage, questionData);
+        const answerRepeats = questionData.correctAnswer === game.lastCorrectAnswer;
+        const operationRepeats = operationType && operationType === game.lastOperationType;
+        const problemRepeated = game.recentProblems.includes(questionData.key);
 
-        if((!game.recentProblems.includes(problemKey) && !operandsUsedRecently) || attempts >= maxAttempts) {
-            // Add to recent problems
-            game.recentProblems.push(problemKey);
-            if(game.recentProblems.length > 3) {
-                game.recentProblems.shift();
+        if(problemRepeated || operandsUsedRecently || answerRepeats || operationRepeats) {
+            if(attempts >= maxAttempts) {
+                selectedOperationType = operationType || null;
+                shouldRecordProblem = true;
+                break;
             }
-
-            // Add operands to recent list
-            if(questionFormat === 'triple') {
-                game.recentOperands.push(num1, num2, num3);
-                if(game.recentOperands.length > 9) {
-                    game.recentOperands.shift();
-                    game.recentOperands.shift();
-                    game.recentOperands.shift();
-                }
-            } else {
-                game.recentOperands.push(num1, num2);
-                if(game.recentOperands.length > 6) {
-                    game.recentOperands.shift();
-                    game.recentOperands.shift();
-                }
-            }
-            break;
+            continue;
         }
+        selectedOperationType = operationType || null;
+        shouldRecordProblem = true;
+        break;
     } while(attempts < maxAttempts);
 
-    // Generate wrong answers
-    const answers = [correctAnswer];
-    const maxAnswer = (game.stage <= 2 || game.stage === 5 || game.stage === 6 || game.stage === 7) ? 10 : 20;
+    if(shouldRecordProblem) {
+        game.recentProblems.push(questionData.key);
+        if(game.recentProblems.length > 3) {
+            game.recentProblems.shift();
+        }
 
-    while(answers.length < 5) {
-        const wrong = correctAnswer + Math.floor(Math.random() * 11) - 5;
-        if(wrong >= 0 && wrong <= maxAnswer && !answers.includes(wrong)) {
-            answers.push(wrong);
+        game.recentOperands.push([...questionData.operands]);
+        if(game.recentOperands.length > 3) {
+            game.recentOperands.shift();
         }
     }
 
-    // Shuffle answers
-    answers.sort(() => Math.random() - 0.5);
+    const answersSet = new Set([questionData.correctAnswer]);
+    while(answersSet.size < 5) {
+        const wrong = randInt(0, questionData.answerRangeMax);
+        if(!answersSet.has(wrong)) {
+            answersSet.add(wrong);
+        }
+    }
+
+    const answers = Array.from(answersSet);
+    shuffleArray(answers);
 
     game.currentQuestion = {
-        num1,
-        num2,
-        num3,
-        operator,
-        correctAnswer,
-        answers,
-        questionFormat
+        questionText: questionData.questionText,
+        correctAnswer: questionData.correctAnswer,
+        answers
     };
+
+    game.lastCorrectAnswer = questionData.correctAnswer;
+    game.lastOperationType = selectedOperationType;
 
     game.startTime = Date.now();
 
-    // Update UI based on question format
-    const operatorSymbol = operator === '+' ? '+' : '-';
-    let questionText;
-
-    if(questionFormat === 'missingFirst') {
-        questionText = `? ${operatorSymbol} ${num2} = ${correctAnswer}`;
-    } else if(questionFormat === 'missingSecond') {
-        questionText = `${num1} ${operatorSymbol} ? = ${correctAnswer}`;
-    } else if(questionFormat === 'triple') {
-        questionText = `${num1} ${operatorSymbol} ${num2} ${operatorSymbol} ${num3} = ?`;
-    } else {
-        questionText = `${num1} ${operatorSymbol} ${num2} = ?`;
-    }
-
-    document.getElementById('question').textContent = questionText;
+    document.getElementById('question').textContent = questionData.questionText;
     const container = document.getElementById('answersContainer');
     container.innerHTML = '';
 
@@ -1311,10 +2660,16 @@ function generateProblem() {
 function checkAnswer(answer) {
     if(game.isGameOver || game.explosion) return;
 
+    if(game.answerLockUntil && Date.now() < game.answerLockUntil) {
+        return;
+    }
+
     const timeTaken = (Date.now() - game.startTime) / 1000;
 
     if(answer === game.currentQuestion.correctAnswer) {
         // Correct answer
+        clearAnswerLock();
+        game.wrongAttemptCount = 0;
         game.correct++;
         const speedBonus = Math.max(0, Math.floor((10 - timeTaken)));
 
@@ -1325,11 +2680,14 @@ function checkAnswer(answer) {
         castSpell();
 
         // Disable buttons during animation
-        const buttons = document.querySelectorAll('.answerBtn');
-        buttons.forEach(btn => btn.disabled = true);
+        setAnswerButtonsDisabled(true);
     } else {
         // Wrong answer - monster speeds up and spell misses
         game.monsterSpeed += 0.5;
+        game.wrongAttemptCount++;
+
+        const lockDuration = game.wrongAttemptCount === 1 ? 1500 : 2500;
+        lockAnswerButtons(lockDuration);
         castSpell(true); // Cast spell with miss = true
     }
 
@@ -1356,12 +2714,21 @@ function castSpell(isMiss = false) {
     game.spellEffect = {
         x: 140,
         y: 150,
+        originX: 140,
+        originY: 150,
         alpha: 1,
         color: '#ffd700',
         hasHit: false,
         isMiss: isMiss,
         missTargetX: targetX,
-        missTargetY: targetY
+        missTargetY: targetY,
+        phase: 'charge',
+        startTime: Date.now(),
+        chargeDuration: 200,
+        chargeProgress: 0,
+        radius: 2,
+        maxRadius: 14,
+        trail: []
     };
 
     const spellInterval = setInterval(() => {
@@ -1370,27 +2737,69 @@ function castSpell(isMiss = false) {
             return;
         }
 
+        const effect = game.spellEffect;
+        const now = Date.now();
+
+        if(effect.phase === 'charge') {
+            const elapsed = now - effect.startTime;
+            effect.chargeProgress = clamp01(elapsed / effect.chargeDuration);
+
+            if(elapsed < effect.chargeDuration) {
+                return;
+            }
+
+            // Transition to travel phase once the charge completes
+            effect.phase = 'travel';
+            effect.travelStart = now;
+            effect.radius = 2;
+            effect.maxRadius = effect.isMiss ? 12 : 16;
+            effect.trail = [];
+            effect.prevX = effect.originX;
+            effect.prevY = effect.originY;
+            effect.directionAngle = 0;
+        }
+
         // Update target dynamically
-        if(game.spellEffect.isMiss) {
+        if(effect.isMiss) {
             // Miss - go to random offset position
-            targetX = game.spellEffect.missTargetX;
-            targetY = game.spellEffect.missTargetY;
+            targetX = effect.missTargetX;
+            targetY = effect.missTargetY;
         } else {
             // Hit - track monster/boss
             targetX = game.isBossFight ? game.bossX + 100 : game.monsterX + 30;
             targetY = 200;
         }
 
-        game.spellEffect.x += (targetX - game.spellEffect.x) * 0.2;
-        game.spellEffect.y += (targetY - game.spellEffect.y) * 0.2;
+        const previousX = effect.x;
+        const previousY = effect.y;
+
+        effect.x += (targetX - effect.x) * 0.2;
+        effect.y += (targetY - effect.y) * 0.2;
+
+        const dx = effect.x - previousX;
+        const dy = effect.y - previousY;
+        if(dx !== 0 || dy !== 0) {
+            effect.directionAngle = Math.atan2(dy, dx);
+        }
+
+        effect.radius += (effect.maxRadius - effect.radius) * 0.25;
+        effect.trail.unshift({
+            x: effect.x,
+            y: effect.y,
+            radius: effect.radius,
+            alpha: 0.6
+        });
+        if(effect.trail.length > 6) {
+            effect.trail.pop();
+        }
 
         // Check if spell hit target
-        if(Math.abs(game.spellEffect.x - targetX) < 10 && Math.abs(game.spellEffect.y - targetY) < 10) {
-            if(!game.spellEffect.hasHit) {
-                game.spellEffect.hasHit = true;
+        if(Math.abs(effect.x - targetX) < 10 && Math.abs(effect.y - targetY) < 10) {
+            if(!effect.hasHit) {
+                effect.hasHit = true;
 
                 // If miss, just disappear without hitting
-                if(game.spellEffect.isMiss) {
+                if(effect.isMiss) {
                     game.spellEffect = null;
                     clearInterval(spellInterval);
                     return;
@@ -1471,9 +2880,8 @@ function castSpell(isMiss = false) {
                                 updateScore();
                             }
 
-                            // Switch day/night cycle when stage changes
-                            game.isDay = !game.isDay;
-                            game.celestialProgress = 0;
+                            // Refresh environment to match the new stage theme
+                            refreshEnvironment(game.timeState || computeDayNightState(), { regenerateClouds: true });
 
                             game.monsterX = canvas.width;
                             game.monsterSpeed = 1; // Reset speed to default
@@ -1484,8 +2892,8 @@ function castSpell(isMiss = false) {
                             showStageAnnouncement(game.stage);
 
                             // Re-enable buttons
-                            const buttons = document.querySelectorAll('.answerBtn');
-                            buttons.forEach(btn => btn.disabled = false);
+                            clearAnswerLock();
+                            setAnswerButtonsDisabled(false);
                         }, 3000);
                     } else {
                         // Boss still alive - small hit effect
@@ -1502,8 +2910,8 @@ function castSpell(isMiss = false) {
                         generateProblem();
 
                         // Re-enable buttons
-                        const buttons = document.querySelectorAll('.answerBtn');
-                        buttons.forEach(btn => btn.disabled = false);
+                        clearAnswerLock();
+                        setAnswerButtonsDisabled(false);
                     }
                 } else {
                     // Start inflation animation when spell hits normal monster
@@ -1529,6 +2937,9 @@ function updateScore() {
 
 // Game over
 function gameOver() {
+    clearAnswerLock();
+    setAnswerButtonsDisabled(true, { locked: true });
+
     // Start witch death animation
     game.witchDeathAnim = {
         startTime: Date.now(),
@@ -1567,6 +2978,10 @@ function gameOver() {
 
 // Restart game
 document.getElementById('restartBtn').onclick = function() {
+    clearAnswerLock();
+    game.wrongAttemptCount = 0;
+    setAnswerButtonsDisabled(false);
+
     game.score = 0;
     game.correct = 0;
     game.monsterX = canvas.width;
@@ -1583,6 +2998,7 @@ document.getElementById('restartBtn').onclick = function() {
     game.parallax.bushes = 0;
     game.celestialProgress = 0;
     game.isDay = true;
+    game.timeState = computeDayNightState();
     game.stage = 1;
     game.questionsInStage = 0;
     game.isBossFight = false;
@@ -1596,8 +3012,11 @@ document.getElementById('restartBtn').onclick = function() {
     game.stageAnnouncement = null;
     game.recentProblems = [];
     game.recentOperands = [];
+    game.lastCorrectAnswer = null;
+    game.lastOperationType = null;
     initBats();
     initSeagulls();
+    refreshEnvironment(game.timeState, { regenerateClouds: true });
 
     document.getElementById('gameOverOverlay').style.display = 'none';
     document.getElementById('gameOver').style.display = 'none';
@@ -1609,173 +3028,146 @@ document.getElementById('restartBtn').onclick = function() {
 
 // Draw parallax background
 function drawBackground() {
-    // Stage-specific color palettes
-    let colors;
-
-    if(game.stage === 2) {
-        // Lava/Nether theme (Minecraft-inspired)
-        colors = {
-            skyTop: '#8B0000',        // Dark red
-            skyBottom: '#4A0000',     // Very dark red
-            mountains: '#5C0000',     // Dark crimson
-            trees: '#8B2500',         // Red-orange pillars
-            bushes: '#A0250F',        // Bright lava cracks
-            ground: '#2B0000',        // Almost black red
-            grass: '#FF4500',         // Bright orange-red (lava glow)
-            lavaGlow: true
-        };
-    } else {
-        // Default palettes (day/night)
-        colors = game.isDay ? {
-            skyTop: '#87ceeb',
-            skyBottom: '#b0d4f1',
-            mountains: '#6b8e9f',
-            trees: '#4a7c59',
-            bushes: '#5a9b4a',
-            ground: '#7cb342',
-            grass: '#9ccc65'
-        } : {
-            skyTop: '#1a1a4e',
-            skyBottom: '#2a3d66',
-            mountains: '#1a2a4a',
-            trees: '#2a4a5a',
-            bushes: '#3a5d5a',
-            ground: '#2a4d2a',
-            grass: '#3a5d3a'
-        };
-    }
-
-    // Sky gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, 350);
-    gradient.addColorStop(0, colors.skyTop);
-    gradient.addColorStop(1, colors.skyBottom);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, 350);
-
-    // Draw twinkling stars (only at night)
-    if(!game.isDay) {
-        stars.forEach(star => {
-            star.brightness += star.twinkleSpeed;
-            if(star.brightness > 1) star.brightness = 0;
-
-            const alpha = Math.abs(Math.sin(star.brightness * Math.PI));
-            ctx.globalAlpha = alpha * 0.8;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(star.x, star.y, star.size, star.size);
-
-            // Star sparkle effect
-            if(alpha > 0.7) {
-                ctx.fillRect(star.x - 1, star.y, 1, star.size);
-                ctx.fillRect(star.x + star.size, star.y, 1, star.size);
-                ctx.fillRect(star.x, star.y - 1, star.size, 1);
-                ctx.fillRect(star.x, star.y + star.size, star.size, 1);
-            }
-        });
-        ctx.globalAlpha = 1;
-
-        // Shooting stars / meteors
-        if(!game.isGameOver) {
-            // Randomly spawn shooting stars (1% chance per frame)
-            if(Math.random() < 0.01) {
-                game.shootingStars.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * 100, // Top part of sky
-                    vx: -3 - Math.random() * 2, // Moving left
-                    vy: 2 + Math.random() * 1.5, // Moving down
-                    life: 1,
-                    trail: []
-                });
-            }
-        }
-
-        // Update and draw shooting stars
-        for(let i = game.shootingStars.length - 1; i >= 0; i--) {
-            const star = game.shootingStars[i];
-
-            // Update position
-            star.x += star.vx;
-            star.y += star.vy;
-            star.life -= 0.015;
-
-            // Add current position to trail
-            star.trail.push({ x: star.x, y: star.y });
-            if(star.trail.length > 15) {
-                star.trail.shift();
-            }
-
-            // Remove if off screen or life depleted
-            if(star.life <= 0 || star.y > 300 || star.x < -50) {
-                game.shootingStars.splice(i, 1);
-                continue;
-            }
-
-            // Draw trail (glowing tail)
-            for(let j = 0; j < star.trail.length; j++) {
-                const trailPoint = star.trail[j];
-                const trailAlpha = (j / star.trail.length) * star.life;
-                const trailSize = (j / star.trail.length) * 3 + 1;
-
-                ctx.globalAlpha = trailAlpha * 0.8;
-
-                // Bright core
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(trailPoint.x, trailPoint.y, trailSize, trailSize);
-
-                // Orange glow
-                ctx.fillStyle = '#ffaa00';
-                ctx.fillRect(trailPoint.x - 1, trailPoint.y - 1, trailSize + 2, trailSize + 2);
-
-                // Red outer glow
-                if(j > star.trail.length * 0.7) {
-                    ctx.fillStyle = '#ff6600';
-                    ctx.fillRect(trailPoint.x - 2, trailPoint.y - 2, trailSize + 4, trailSize + 4);
-                }
-            }
-
-            // Draw meteor head
-            ctx.globalAlpha = star.life;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(star.x - 1, star.y - 1, 4, 4);
-
-            // Bright glow around meteor
-            ctx.fillStyle = '#ffffaa';
-            ctx.globalAlpha = star.life * 0.6;
-            ctx.fillRect(star.x - 2, star.y - 2, 6, 6);
-
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    // Update and draw sun/moon on elliptical path
     if(!game.isGameOver) {
-        game.celestialProgress += 0.001;
+        game.celestialProgress += 0.0005;
         if(game.celestialProgress > 1) game.celestialProgress = 0;
     }
 
-    // Elliptical path: x goes from RIGHT to LEFT (canvas.width to 0)
-    const celestialX = canvas.width - (game.celestialProgress * canvas.width);
+    const previousIsDay = game.isDay;
+    const timeState = computeDayNightState();
+    game.timeState = timeState;
+
+    if(previousIsDay !== timeState.isDay) {
+        refreshEnvironment(timeState);
+    } else {
+        game.isDay = timeState.isDay;
+    }
+
+    const palette = getCurrentPalette(timeState);
+    const themeName = palette.themeName;
+    const dayStrength = timeState.dayStrength;
+    const nightStrength = timeState.nightStrength;
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, 350);
+    gradient.addColorStop(0, palette.skyTop || '#87ceeb');
+    gradient.addColorStop(1, palette.skyBottom || '#b0d4f1');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, 350);
+
+    if(palette.horizon) {
+        const horizonGradient = ctx.createLinearGradient(0, 220, 0, 360);
+        horizonGradient.addColorStop(0, palette.horizon);
+        horizonGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = horizonGradient;
+        ctx.fillRect(0, 200, canvas.width, 160);
+    }
+
+    stars.forEach(star => {
+        star.brightness += star.twinkleSpeed;
+        if(star.brightness > 1) star.brightness = 0;
+
+        const alpha = Math.abs(Math.sin(star.brightness * Math.PI)) * nightStrength;
+        if(alpha <= 0) return;
+
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+
+        if(alpha > 0.7 * nightStrength) {
+            ctx.fillRect(star.x - 1, star.y, 1, star.size);
+            ctx.fillRect(star.x + star.size, star.y, 1, star.size);
+            ctx.fillRect(star.x, star.y - 1, star.size, 1);
+            ctx.fillRect(star.x, star.y + star.size, star.size, 1);
+        }
+    });
+    ctx.globalAlpha = 1;
+
+    if(!game.isGameOver && Math.random() < 0.01 * nightStrength) {
+        game.shootingStars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * 100,
+            vx: -3 - Math.random() * 2,
+            vy: 2 + Math.random() * 1.5,
+            life: 1,
+            trail: []
+        });
+    }
+
+    for(let i = game.shootingStars.length - 1; i >= 0; i--) {
+        const star = game.shootingStars[i];
+        star.x += star.vx;
+        star.y += star.vy;
+        star.life -= 0.015;
+
+        star.trail.push({ x: star.x, y: star.y });
+        if(star.trail.length > 15) {
+            star.trail.shift();
+        }
+
+        if(star.life <= 0 || star.y > 300 || star.x < -50) {
+            game.shootingStars.splice(i, 1);
+            continue;
+        }
+
+        for(let j = 0; j < star.trail.length; j++) {
+            const trailPoint = star.trail[j];
+            const trailAlpha = (j / star.trail.length) * star.life * nightStrength;
+            const trailSize = (j / star.trail.length) * 3 + 1;
+
+            if(trailAlpha <= 0) continue;
+
+            ctx.globalAlpha = trailAlpha * 0.8;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(trailPoint.x, trailPoint.y, trailSize, trailSize);
+
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillRect(trailPoint.x - 1, trailPoint.y - 1, trailSize + 2, trailSize + 2);
+
+            if(j > star.trail.length * 0.7) {
+                ctx.fillStyle = '#ff6600';
+                ctx.fillRect(trailPoint.x - 2, trailPoint.y - 2, trailSize + 4, trailSize + 4);
+            }
+        }
+
+        const coreAlpha = star.life * nightStrength;
+        if(coreAlpha > 0) {
+            ctx.globalAlpha = coreAlpha;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(star.x - 1, star.y - 1, 4, 4);
+
+            ctx.fillStyle = '#ffffaa';
+            ctx.globalAlpha = coreAlpha * 0.6;
+            ctx.fillRect(star.x - 2, star.y - 2, 6, 6);
+        }
+
+        ctx.globalAlpha = 1;
+    }
+
     const ellipseA = canvas.width / 2;
-    const ellipseB = 120; // Increased for more vertical movement
+    const ellipseB = 120;
     const centerX = canvas.width / 2;
-    const centerY = 120; // Lowered center for better visibility
+    const centerY = 120;
+    const computeCelestialY = positionX => {
+        const relativeX = positionX - centerX;
+        const normalizedX = relativeX / ellipseA;
+        const yOffset = Math.sqrt(Math.max(0, 1 - Math.pow(Math.abs(normalizedX), 1.5))) * ellipseB;
+        return centerY - yOffset;
+    };
 
-    // Calculate y position on ellipse with smoother curve
-    const relativeX = celestialX - centerX;
-    const normalizedX = relativeX / ellipseA;
-
-    // Use a smoother curve (power of 1.5 instead of 2 for less time at apex)
-    const yOffset = Math.sqrt(Math.max(0, 1 - Math.pow(Math.abs(normalizedX), 1.5))) * ellipseB;
-    const celestialY = centerY - yOffset;
-
-    if(game.isDay) {
-        // Draw sun
-        ctx.fillStyle = '#ffeb3b';
+    if(timeState.sunAlpha > 0) {
+        const sunTrack = clamp01(timeState.sunTrack || 0);
+        const celestialX = canvas.width - sunTrack * canvas.width;
+        const celestialY = computeCelestialY(celestialX);
+        const sunCore = palette.sunCore || '#ffeb3b';
+        const sunGlow = palette.sunGlow || '#ffd54f';
+        ctx.save();
+        ctx.globalAlpha = timeState.sunAlpha;
+        ctx.fillStyle = sunCore;
         ctx.beginPath();
         ctx.arc(celestialX, celestialY, 25, 0, Math.PI * 2);
         ctx.fill();
 
-        // Sun rays
-        ctx.strokeStyle = '#ffd700';
+        ctx.strokeStyle = sunGlow;
         ctx.lineWidth = 3;
         for(let i = 0; i < 12; i++) {
             const angle = (i / 12) * Math.PI * 2 + Date.now() / 1000;
@@ -1789,21 +3181,27 @@ function drawBackground() {
             ctx.stroke();
         }
 
-        // Sun glow
-        ctx.globalAlpha = 0.2;
-        ctx.fillStyle = '#ffeb3b';
+        ctx.globalAlpha = Math.min(0.3, timeState.sunAlpha * 0.3 + 0.05);
+        ctx.fillStyle = sunGlow;
         ctx.beginPath();
         ctx.arc(celestialX, celestialY, 35, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = 1;
-    } else {
-        // Draw moon
-        ctx.fillStyle = '#f0f0a0';
+        ctx.restore();
+    }
+
+    if(timeState.moonAlpha > 0) {
+        const moonTrack = clamp01(timeState.moonTrack || 0);
+        const celestialX = canvas.width - moonTrack * canvas.width;
+        const celestialY = computeCelestialY(celestialX);
+        const moonCore = palette.moonCore || '#f0f0a0';
+        const moonGlow = palette.moonGlow || '#ffff80';
+        ctx.save();
+        ctx.globalAlpha = timeState.moonAlpha;
+        ctx.fillStyle = moonCore;
         ctx.beginPath();
         ctx.arc(celestialX, celestialY, 20, 0, Math.PI * 2);
         ctx.fill();
 
-        // Moon craters
         ctx.fillStyle = '#d0d080';
         ctx.beginPath();
         ctx.arc(celestialX - 5, celestialY - 3, 4, 0, Math.PI * 2);
@@ -1815,274 +3213,136 @@ function drawBackground() {
         ctx.arc(celestialX + 2, celestialY + 8, 2, 0, Math.PI * 2);
         ctx.fill();
 
-        // Moon glow
-        ctx.globalAlpha = 0.3;
-        ctx.fillStyle = '#ffff80';
+        ctx.globalAlpha = Math.min(0.35, timeState.moonAlpha * 0.35 + 0.05);
+        ctx.fillStyle = moonGlow;
         ctx.beginPath();
         ctx.arc(celestialX, celestialY, 25, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.restore();
     }
 
-    // Update and draw seagulls (only during day)
-    if(game.isDay) {
-        game.seagulls.forEach(seagull => {
-            if(!game.isGameOver) {
-                seagull.x += seagull.speed;
-                seagull.wingPhase += 0.15;
+    drawCloudLayersOnCanvas(palette);
 
-                // Reset seagull when it goes off screen
-                if(seagull.x > canvas.width + 40) {
-                    seagull.x = -40;
-                    seagull.y = 30 + Math.random() * 120;
-                }
+    game.seagulls.forEach(seagull => {
+        if(!game.isGameOver) {
+            seagull.x += seagull.speed;
+            seagull.wingPhase += 0.15;
+            if(seagull.x > canvas.width + 40) {
+                seagull.x = -40;
+                seagull.y = 30 + Math.random() * 120;
             }
+        }
+    });
 
+    const seagullVisibility = Math.min(1, Math.max(0, dayStrength));
+    if(seagullVisibility > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = seagullVisibility;
+        game.seagulls.forEach(seagull => {
             const wingAngle = Math.sin(seagull.wingPhase) * 0.8;
             const bobbing = Math.sin(seagull.wingPhase * 0.5) * seagull.amplitude * 0.1;
 
-            // Seagull body - white
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(seagull.x, seagull.y + bobbing, 10, 4);
 
-            // Seagull wings - V shape
             ctx.save();
             ctx.translate(seagull.x + 5, seagull.y + 2 + bobbing);
-
-            // Left wing
             ctx.rotate(wingAngle);
             ctx.fillRect(-8, -1, 8, 3);
             ctx.rotate(-wingAngle);
-
-            // Right wing
             ctx.rotate(-wingAngle);
             ctx.fillRect(0, -1, 8, 3);
-
             ctx.restore();
 
-            // Seagull head
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(seagull.x + 8, seagull.y - 1 + bobbing, 3, 3);
-
-            // Beak - yellow
             ctx.fillStyle = '#ffaa00';
             ctx.fillRect(seagull.x + 11, seagull.y + bobbing, 2, 2);
         });
+        ctx.restore();
     }
 
-    // Update and draw bats (only at night)
-    if(!game.isDay) {
-        game.bats.forEach(bat => {
-            if(!game.isGameOver) {
-                bat.x += bat.speed;
-                bat.wingPhase += 0.2;
-
-                // Reset bat when it goes off screen
-                if(bat.x > canvas.width + 30) {
-                    bat.x = -30;
-                    bat.y = 50 + Math.random() * 150;
-                }
+    game.bats.forEach(bat => {
+        if(!game.isGameOver) {
+            bat.x += bat.speed;
+            bat.wingPhase += 0.2;
+            if(bat.x > canvas.width + 30) {
+                bat.x = -30;
+                bat.y = 50 + Math.random() * 150;
             }
+        }
+    });
 
+    const batVisibility = Math.min(1, Math.max(0, nightStrength));
+    if(batVisibility > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = batVisibility;
+        game.bats.forEach(bat => {
             const wingAngle = Math.sin(bat.wingPhase) * 0.5;
             const bobbing = Math.sin(bat.wingPhase * 0.5) * bat.amplitude * 0.1;
 
-            // Bat body
             ctx.fillStyle = '#2a2a2a';
             ctx.fillRect(bat.x, bat.y + bobbing, 8, 6);
 
-            // Bat wings
             ctx.save();
             ctx.translate(bat.x + 4, bat.y + 3 + bobbing);
-
-            // Left wing
             ctx.rotate(wingAngle);
             ctx.fillRect(-12, -2, 10, 4);
             ctx.rotate(-wingAngle);
-
-            // Right wing
             ctx.rotate(-wingAngle);
             ctx.fillRect(2, -2, 10, 4);
-
             ctx.restore();
 
-            // Bat ears
             ctx.fillRect(bat.x + 1, bat.y - 2 + bobbing, 2, 3);
             ctx.fillRect(bat.x + 5, bat.y - 2 + bobbing, 2, 3);
         });
+        ctx.restore();
     }
 
-    // Update parallax positions (moving right to simulate wizard moving forward)
     if(!game.isGameOver) {
         game.parallax.mountains += 0.2;
         game.parallax.trees += 0.5;
         game.parallax.bushes += 1.0;
     }
 
-    // Layer 1: Distant mountains/structures (slowest)
     const mountainOffset = game.parallax.mountains % 800;
+    drawMountainLayer(themeName, palette, mountainOffset);
 
-    if(game.stage === 2) {
-        // Lava stage: Dark netherrack cliffs
-        ctx.fillStyle = colors.mountains;
-        for(let x = -800; x < canvas.width + 800; x += 200) {
-            const baseX = x - mountainOffset;
-            // Jagged cliff 1
-            ctx.beginPath();
-            ctx.moveTo(baseX, 280);
-            ctx.lineTo(baseX + 60, 160);
-            ctx.lineTo(baseX + 80, 180);
-            ctx.lineTo(baseX + 100, 170);
-            ctx.lineTo(baseX + 160, 280);
-            ctx.fill();
-
-            // Cliff 2
-            ctx.beginPath();
-            ctx.moveTo(baseX + 100, 280);
-            ctx.lineTo(baseX + 150, 190);
-            ctx.lineTo(baseX + 170, 200);
-            ctx.lineTo(baseX + 200, 185);
-            ctx.lineTo(baseX + 240, 280);
-            ctx.fill();
-        }
-    } else {
-        // Default: Mountains
-        ctx.fillStyle = colors.mountains;
-        for(let x = -800; x < canvas.width + 800; x += 200) {
-            const baseX = x - mountainOffset;
-            // Mountain 1
-            ctx.beginPath();
-            ctx.moveTo(baseX, 280);
-            ctx.lineTo(baseX + 80, 180);
-            ctx.lineTo(baseX + 160, 280);
-            ctx.fill();
-
-            // Mountain 2
-            ctx.beginPath();
-            ctx.moveTo(baseX + 100, 280);
-            ctx.lineTo(baseX + 170, 200);
-            ctx.lineTo(baseX + 240, 280);
-            ctx.fill();
-        }
-    }
-
-    // Layer 2: Trees/Pillars (medium speed)
     const treeOffset = game.parallax.trees % 600;
+    drawMidgroundLayer(themeName, palette, treeOffset);
 
-    if(game.stage === 2) {
-        // Lava stage: Basalt pillars with lava drips
-        const time = Date.now() / 1000;
-
-        for(let x = -600; x < canvas.width + 600; x += 100) {
-            const baseX = x - treeOffset;
-
-            // Basalt pillar
-            ctx.fillStyle = colors.trees;
-            ctx.fillRect(baseX + 38, 250, 20, 80);
-            ctx.fillRect(baseX + 36, 248, 24, 4);
-            ctx.fillRect(baseX + 34, 246, 28, 4);
-
-            // Lava drips (animated)
-            const dripPhase = (time * 2 + x * 0.01) % 1;
-            const dripY = 250 + dripPhase * 60;
-
-            if(dripY < 310) {
-                ctx.fillStyle = '#FF6600';
-                ctx.fillRect(baseX + 45, dripY, 4, 8);
-                ctx.fillStyle = '#FF4500';
-                ctx.fillRect(baseX + 46, dripY + 6, 2, 4);
-            }
-        }
-    } else {
-        // Default: Trees
-        ctx.fillStyle = colors.trees;
-        for(let x = -600; x < canvas.width + 600; x += 100) {
-            const baseX = x - treeOffset;
-            // Tree trunk
-            ctx.fillRect(baseX + 40, 280, 15, 50);
-            // Tree foliage
-            ctx.beginPath();
-            ctx.moveTo(baseX + 30, 280);
-            ctx.lineTo(baseX + 47, 250);
-            ctx.lineTo(baseX + 65, 280);
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.moveTo(baseX + 32, 270);
-            ctx.lineTo(baseX + 47, 240);
-            ctx.lineTo(baseX + 62, 270);
-            ctx.fill();
-        }
-    }
-
-    // Layer 3: Bushes/Lava cracks (fastest)
     const bushOffset = game.parallax.bushes % 400;
+    drawForegroundLayer(themeName, palette, bushOffset);
 
-    if(game.stage === 2) {
-        // Lava stage: Glowing lava cracks
-        const time = Date.now() / 1000;
-
-        for(let x = -400; x < canvas.width + 400; x += 80) {
-            const baseX = x - bushOffset;
-            const glow = Math.sin(time * 3 + x * 0.1) * 0.3 + 0.7;
-
-            // Lava crack
-            ctx.fillStyle = colors.bushes;
-            ctx.globalAlpha = glow;
-            ctx.fillRect(baseX + 10, 325, 30, 8);
-            ctx.fillRect(baseX + 15, 318, 20, 7);
-            ctx.fillRect(baseX + 20, 310, 10, 8);
-
-            // Bright core
-            ctx.fillStyle = '#FFAA00';
-            ctx.fillRect(baseX + 18, 327, 14, 4);
-
-            ctx.globalAlpha = 1;
-        }
-    } else {
-        // Default: Bushes
-        ctx.fillStyle = colors.bushes;
-        for(let x = -400; x < canvas.width + 400; x += 80) {
-            const baseX = x - bushOffset;
-            // Bush
-            ctx.fillRect(baseX + 10, 320, 30, 20);
-            ctx.fillRect(baseX + 5, 330, 40, 15);
-
-            // Small bush
-            ctx.fillRect(baseX + 50, 330, 20, 15);
-        }
-    }
-
-    // Ground
-    ctx.fillStyle = colors.ground;
+    const groundGradient = ctx.createLinearGradient(0, 320, 0, 360);
+    groundGradient.addColorStop(0, palette.groundHighlight || palette.ground || '#7cb342');
+    groundGradient.addColorStop(1, palette.ground || '#4a3d2a');
+    ctx.fillStyle = groundGradient;
     ctx.fillRect(0, 345, canvas.width, 55);
 
-    // Draw stage indicators (10 circles)
+    drawForegroundAccents(themeName, palette, game.parallax.bushes % 120);
+
     const stageY = 375;
     const startX = (canvas.width - (10 * 30)) / 2;
 
     for(let i = 1; i <= 10; i++) {
         const circleX = startX + (i - 1) * 30 + 15;
 
-        // Circle background
         ctx.fillStyle = i === game.stage ? '#ffd700' : '#555';
         ctx.beginPath();
         ctx.arc(circleX, stageY, 12, 0, Math.PI * 2);
         ctx.fill();
 
-        // Circle border
         ctx.strokeStyle = i === game.stage ? '#ffeb3b' : '#333';
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Stage number
         ctx.fillStyle = i === game.stage ? '#000' : '#fff';
         ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(i, circleX, stageY);
 
-        // Glow for current stage
         if(i === game.stage) {
             ctx.globalAlpha = 0.5;
             ctx.fillStyle = '#ffd700';
@@ -2093,15 +3353,23 @@ function drawBackground() {
         }
     }
 
-    // Grass
-    ctx.fillStyle = colors.grass;
+    const grassColor = palette.grass || '#3a5d3a';
+    const grassHighlight = palette.grassHighlight || '#4f8a4a';
     const grassOffset = game.parallax.bushes % 20;
     for(let i = -20; i < canvas.width + 20; i += 20) {
         const baseX = i - grassOffset;
+        ctx.fillStyle = grassColor;
         ctx.fillRect(baseX, 345, 3, 8);
         ctx.fillRect(baseX + 7, 347, 3, 6);
         ctx.fillRect(baseX + 14, 346, 3, 7);
+
+        ctx.fillStyle = grassHighlight;
+        ctx.fillRect(baseX, 344, 2, 3);
+        ctx.fillRect(baseX + 7, 346, 2, 3);
+        ctx.fillRect(baseX + 14, 345, 2, 3);
     }
+
+    drawAmbientParticles();
 }
 
 // Main game loop
@@ -2141,7 +3409,7 @@ function gameLoop() {
             drawBoss(currentBoss, game.bossX, 100, 1);
 
             // Check if boss reached witch (boss is 200px wide, witch at x=50)
-            if(game.bossX < 250 && !game.bossDeathAnim && !game.witchDeathAnim) {
+            if(game.bossX < 150 && !game.bossDeathAnim && !game.witchDeathAnim) {
                 gameOver();
             }
         } else {
@@ -2185,8 +3453,8 @@ function gameLoop() {
                     generateProblem();
 
                     // Re-enable buttons
-                    const buttons = document.querySelectorAll('.answerBtn');
-                    buttons.forEach(btn => btn.disabled = false);
+                    clearAnswerLock();
+                    setAnswerButtonsDisabled(false);
                 }
             }
 
@@ -2249,18 +3517,163 @@ function gameLoop() {
 
     // Draw spell effect
     if(game.spellEffect) {
-        ctx.fillStyle = game.spellEffect.color;
-        ctx.globalAlpha = game.spellEffect.alpha;
-        ctx.beginPath();
-        ctx.arc(game.spellEffect.x, game.spellEffect.y, 10, 0, Math.PI * 2);
-        ctx.fill();
+        const effect = game.spellEffect;
+        const now = Date.now();
 
-        // Particles
-        for(let i = 0; i < 5; i++) {
-            const angle = (Date.now() / 100 + i * Math.PI * 2 / 5);
-            const px = game.spellEffect.x + Math.cos(angle) * 15;
-            const py = game.spellEffect.y + Math.sin(angle) * 15;
-            ctx.fillRect(px, py, 3, 3);
+        if(effect.phase === 'charge') {
+            const progress = effect.chargeProgress !== undefined
+                ? effect.chargeProgress
+                : clamp01((now - effect.startTime) / effect.chargeDuration);
+            const collapse = Math.pow(Math.max(0, 1 - progress), 0.85);
+            const baseRadius = 45;
+
+            // Soft ambient glow that tightens as energy concentrates
+            const glowRadius = baseRadius * collapse + 18;
+            const glowGradient = ctx.createRadialGradient(
+                effect.originX,
+                effect.originY,
+                glowRadius * 0.25,
+                effect.originX,
+                effect.originY,
+                glowRadius
+            );
+            glowGradient.addColorStop(0, 'rgba(255, 255, 240, 0.75)');
+            glowGradient.addColorStop(0.4, 'rgba(255, 220, 120, 0.55)');
+            glowGradient.addColorStop(1, 'rgba(255, 160, 0, 0.05)');
+
+            ctx.save();
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = glowGradient;
+            ctx.beginPath();
+            ctx.arc(effect.originX, effect.originY, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Elliptical swirl for a subtle 3D feel
+            ctx.save();
+            ctx.translate(effect.originX, effect.originY);
+            const wobble = Math.sin(now / 220) * 0.2;
+            ctx.rotate(wobble);
+            const squash = 0.55 + Math.sin(now / 260) * 0.1;
+            ctx.scale(1.3, squash);
+
+            for(let i = 0; i < 3; i++) {
+                const offsetProgress = (progress * 1.5 + i * 0.25) % 1;
+                const ringRadius = Math.max(6, (baseRadius - i * 10) * collapse + 8);
+                const ringAlpha = clamp01(0.65 - offsetProgress * 0.5);
+
+                ctx.globalAlpha = ringAlpha;
+                ctx.lineWidth = 6 - i * 1.8;
+                ctx.strokeStyle = `rgba(255, ${200 - i * 30}, ${80 + i * 20}, ${0.7 - i * 0.15})`;
+                ctx.beginPath();
+                ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Sparking motes spiralling inward
+            for(let i = 0; i < 6; i++) {
+                const spin = now / 90 + i * (Math.PI * 2 / 6);
+                const orbit = (baseRadius * 0.6) * collapse + 6;
+                const px = effect.originX + Math.cos(spin) * orbit;
+                const py = effect.originY + Math.sin(spin) * orbit * 0.55;
+                ctx.globalAlpha = 0.6 - progress * 0.3;
+                ctx.fillStyle = '#fff8dc';
+                ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+            }
+
+            // Intensifying core that collapses into the launch point
+            const coreRadius = Math.max(2, 10 * collapse);
+            const coreGradient = ctx.createRadialGradient(
+                effect.originX,
+                effect.originY,
+                0,
+                effect.originX,
+                effect.originY,
+                coreRadius * 2
+            );
+            coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+            coreGradient.addColorStop(0.6, 'rgba(255, 240, 180, 0.85)');
+            coreGradient.addColorStop(1, 'rgba(255, 200, 80, 0.3)');
+
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = coreGradient;
+            ctx.beginPath();
+            ctx.arc(effect.originX, effect.originY, coreRadius * 1.2, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            const radius = effect.radius || 10;
+
+            // Trailing bloom
+            if(effect.trail && effect.trail.length) {
+                for(let i = 0; i < effect.trail.length; i++) {
+                    const segment = effect.trail[i];
+                    const fade = 1 - i / effect.trail.length;
+                    ctx.globalAlpha = (segment.alpha || 0.4) * fade * 0.6;
+                    const tailGradient = ctx.createRadialGradient(
+                        segment.x,
+                        segment.y,
+                        0,
+                        segment.x,
+                        segment.y,
+                        (segment.radius || radius) * 1.6
+                    );
+                    tailGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+                    tailGradient.addColorStop(0.6, 'rgba(255, 210, 120, 0.25)');
+                    tailGradient.addColorStop(1, 'rgba(255, 140, 0, 0)');
+                    ctx.fillStyle = tailGradient;
+                    ctx.beginPath();
+                    ctx.arc(segment.x, segment.y, (segment.radius || radius) * 1.1, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Main projectile orb that grows mid-flight
+            const projectileGradient = ctx.createRadialGradient(
+                effect.x,
+                effect.y,
+                0,
+                effect.x,
+                effect.y,
+                radius * 2.2
+            );
+            projectileGradient.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+            projectileGradient.addColorStop(0.2, 'rgba(255, 250, 210, 0.9)');
+            projectileGradient.addColorStop(0.6, 'rgba(255, 200, 80, 0.8)');
+            projectileGradient.addColorStop(1, 'rgba(255, 120, 0, 0)');
+
+            ctx.globalAlpha = effect.alpha;
+            ctx.fillStyle = projectileGradient;
+            ctx.beginPath();
+            ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Leading highlight that stretches in the travel direction
+            if(typeof effect.directionAngle === 'number') {
+                ctx.save();
+                ctx.translate(effect.x, effect.y);
+                ctx.rotate(effect.directionAngle);
+                const highlightGradient = ctx.createLinearGradient(0, 0, radius * 1.8, 0);
+                highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = highlightGradient;
+                ctx.globalAlpha = 0.8;
+                ctx.beginPath();
+                ctx.ellipse(radius * 0.4, 0, radius * 1.1, radius * 0.45, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Sparkling embers around the projectile
+            for(let i = 0; i < 6; i++) {
+                const angle = now / 80 + i * (Math.PI * 2 / 6);
+                const distance = radius * 1.4;
+                const px = effect.x + Math.cos(angle) * distance;
+                const py = effect.y + Math.sin(angle) * distance;
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = '#fff4c2';
+                ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+            }
         }
 
         ctx.globalAlpha = 1;
@@ -2383,6 +3796,8 @@ function gameLoop() {
 // Initialize game
 initBats();
 initSeagulls();
+game.timeState = computeDayNightState();
+refreshEnvironment(game.timeState, { regenerateClouds: true });
 game.currentMonster = monsters[Math.floor(Math.random() * monsters.length)];
 showStageAnnouncement(1);
 gameLoop();
