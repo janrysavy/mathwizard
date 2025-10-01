@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.3.4';
+    const declared = '3.3.5';
     let fromQuery = null;
 
     try {
@@ -670,238 +670,719 @@ function drawAmbientParticles() {
     ctx.globalAlpha = 1;
 }
 
-function drawMountainLayer(themeName, palette, offset) {
-    const spacing = 200;
-    for(let x = -800; x < canvas.width + 800; x += spacing) {
-        const baseX = x - offset;
-        if(themeName === 'volcano' || themeName === 'molten') {
+const parallaxDesigns = {
+    mountain: {
+        mountainSpacing: 220,
+        midgroundSpacing: 120,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
             ctx.fillStyle = palette.mountains;
             ctx.beginPath();
-            ctx.moveTo(baseX, 280);
-            ctx.lineTo(baseX + 60, 160);
-            ctx.lineTo(baseX + 90, 200);
-            ctx.lineTo(baseX + 120, 150);
-            ctx.lineTo(baseX + 180, 280);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainHighlight;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 60, 160);
-            ctx.lineTo(baseX + 90, 200);
-            ctx.lineTo(baseX + 105, 210);
-            ctx.lineTo(baseX + 90, 170);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainShadow;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 120, 150);
-            ctx.lineTo(baseX + 150, 210);
-            ctx.lineTo(baseX + 180, 280);
-            ctx.fill();
-        } else if(themeName === 'dragon') {
-            ctx.fillStyle = palette.mountains;
-            ctx.beginPath();
-            ctx.moveTo(baseX, 280);
-            ctx.lineTo(baseX + 40, 190);
-            ctx.lineTo(baseX + 90, 210);
-            ctx.lineTo(baseX + 120, 140);
-            ctx.lineTo(baseX + 180, 200);
-            ctx.lineTo(baseX + 220, 140);
-            ctx.lineTo(baseX + 260, 280);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainHighlight;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 90, 210);
-            ctx.lineTo(baseX + 120, 140);
-            ctx.lineTo(baseX + 150, 180);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainShadow;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 180, 200);
-            ctx.lineTo(baseX + 220, 140);
-            ctx.lineTo(baseX + 240, 220);
-            ctx.fill();
-        } else if(themeName === 'tundra' || themeName === 'crystal') {
-            ctx.fillStyle = palette.mountains;
-            ctx.beginPath();
-            ctx.moveTo(baseX, 280);
-            ctx.lineTo(baseX + 70, 150);
-            ctx.lineTo(baseX + 120, 180);
-            ctx.lineTo(baseX + 160, 120);
-            ctx.lineTo(baseX + 220, 280);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainHighlight;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 70, 150);
-            ctx.lineTo(baseX + 120, 180);
-            ctx.lineTo(baseX + 130, 170);
-            ctx.lineTo(baseX + 100, 140);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainShadow;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 160, 120);
-            ctx.lineTo(baseX + 200, 180);
-            ctx.lineTo(baseX + 220, 280);
-            ctx.fill();
-        } else if(themeName === 'shadow' || themeName === 'storm') {
-            ctx.fillStyle = palette.mountains;
-            ctx.beginPath();
-            ctx.moveTo(baseX, 280);
-            ctx.lineTo(baseX + 50, 180);
-            ctx.lineTo(baseX + 80, 220);
-            ctx.lineTo(baseX + 130, 160);
-            ctx.lineTo(baseX + 170, 210);
-            ctx.lineTo(baseX + 210, 150);
-            ctx.lineTo(baseX + 250, 280);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainHighlight;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 80, 220);
-            ctx.lineTo(baseX + 130, 160);
-            ctx.lineTo(baseX + 145, 200);
-            ctx.fill();
-
-            ctx.fillStyle = palette.mountainShadow;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 170, 210);
-            ctx.lineTo(baseX + 210, 150);
-            ctx.lineTo(baseX + 230, 220);
-            ctx.fill();
-        } else {
-            ctx.fillStyle = palette.mountains;
-            ctx.beginPath();
-            ctx.moveTo(baseX, 280);
+            ctx.moveTo(baseX - 20, 300);
+            ctx.lineTo(baseX + 30, 210);
             ctx.lineTo(baseX + 80, 180);
-            ctx.lineTo(baseX + 160, 280);
+            ctx.lineTo(baseX + 140, 210);
+            ctx.lineTo(baseX + 190, 190);
+            ctx.lineTo(baseX + 240, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 50, 230);
+            ctx.lineTo(baseX + 80, 180);
+            ctx.lineTo(baseX + 105, 215);
+            ctx.lineTo(baseX + 100, 300);
+            ctx.lineTo(baseX + 60, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 135, 230);
+            ctx.lineTo(baseX + 190, 190);
+            ctx.lineTo(baseX + 220, 260);
+            ctx.lineTo(baseX + 170, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 10, 240, 16, 70);
+            ctx.fillRect(baseX + 150, 248, 14, 62);
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.fillRect(baseX + 22, 240, 6, 70);
+            ctx.fillRect(baseX + 160, 248, 5, 62);
+        },
+        drawMidground(baseX, palette, now) {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 30, 282, 18, 58);
+            ctx.fillRect(baseX + 70, 268, 22, 72);
+            ctx.fillRect(baseX + 110, 278, 16, 62);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 40, 282, 6, 58);
+            ctx.fillRect(baseX + 82, 268, 6, 72);
+            ctx.fillRect(baseX + 120, 278, 5, 62);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 28, 260, 80, 12);
+        },
+        drawForeground(baseX, palette, now) {
+            ctx.fillStyle = palette.groundHighlight || palette.bushes;
+            ctx.fillRect(baseX + 6, 330, 46, 12);
+            ctx.fillRect(baseX + 16, 322, 26, 10);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 20, 330, 18, 12);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 40, 316, 6, 16);
+        }
+    },
+    volcano: {
+        mountainSpacing: 230,
+        midgroundSpacing: 140,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            const lavaPulse = Math.sin(now / 350 + baseX * 0.01) * 0.35 + 0.65;
+
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX - 30, 300);
+            ctx.lineTo(baseX + 20, 220);
+            ctx.lineTo(baseX + 60, 180);
+            ctx.lineTo(baseX + 90, 210);
+            ctx.lineTo(baseX + 120, 190);
+            ctx.lineTo(baseX + 170, 240);
+            ctx.lineTo(baseX + 210, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 110, 210);
+            ctx.lineTo(baseX + 170, 240);
+            ctx.lineTo(baseX + 200, 300);
+            ctx.lineTo(baseX + 130, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 40, 230);
+            ctx.lineTo(baseX + 60, 180);
+            ctx.lineTo(baseX + 85, 210);
+            ctx.lineTo(baseX + 70, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.globalAlpha = 0.6 * lavaPulse;
+            ctx.fillStyle = '#ff7a36';
+            ctx.fillRect(baseX + 70, 210, 44, 16);
+            ctx.fillRect(baseX + 82, 196, 20, 12);
+            ctx.globalAlpha = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            const glow = Math.sin(now / 280 + baseX * 0.03) * 0.3 + 0.7;
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 40, 268, 28, 82);
+            ctx.fillRect(baseX + 32, 256, 36, 18);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 46, 262, 10, 30);
+
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#ff9f43';
+            ctx.fillRect(baseX + 50, 286, 10, 40);
+            ctx.fillRect(baseX + 38, 296, 6, 24);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            const glow = Math.sin(now / 220 + baseX * 0.02) * 0.25 + 0.75;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 12, 328, 36, 16);
+            ctx.fillRect(baseX + 18, 316, 24, 12);
+
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#ffb347';
+            ctx.fillRect(baseX + 20, 324, 20, 6);
+            ctx.fillRect(baseX + 30, 332, 12, 4);
+            ctx.globalAlpha = 1;
+        }
+    },
+    tundra: {
+        mountainSpacing: 210,
+        midgroundSpacing: 110,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX - 10, 300);
+            ctx.lineTo(baseX + 50, 190);
+            ctx.lineTo(baseX + 90, 200);
+            ctx.lineTo(baseX + 130, 150);
+            ctx.lineTo(baseX + 190, 300);
+            ctx.closePath();
             ctx.fill();
 
             ctx.fillStyle = palette.mountainHighlight;
             ctx.beginPath();
             ctx.moveTo(baseX + 40, 210);
-            ctx.lineTo(baseX + 80, 180);
-            ctx.lineTo(baseX + 90, 210);
+            ctx.lineTo(baseX + 90, 200);
+            ctx.lineTo(baseX + 100, 188);
+            ctx.lineTo(baseX + 70, 170);
+            ctx.closePath();
             ctx.fill();
 
             ctx.fillStyle = palette.mountainShadow;
             ctx.beginPath();
-            ctx.moveTo(baseX + 80, 180);
-            ctx.lineTo(baseX + 120, 220);
-            ctx.lineTo(baseX + 160, 280);
+            ctx.moveTo(baseX + 120, 190);
+            ctx.lineTo(baseX + 150, 210);
+            ctx.lineTo(baseX + 180, 300);
+            ctx.lineTo(baseX + 130, 300);
+            ctx.closePath();
             ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 118, 200, 12, 36);
+            ctx.fillRect(baseX + 132, 190, 10, 24);
+        },
+        drawMidground(baseX, palette, now) {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 32, 272, 16, 70);
+            ctx.fillRect(baseX + 54, 260, 18, 64);
+            ctx.fillRect(baseX + 80, 268, 14, 60);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 40, 276, 6, 66);
+            ctx.fillRect(baseX + 60, 264, 5, 60);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(baseX + 28, 250, 70, 10);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 10, 324, 36, 18);
+            ctx.fillRect(baseX + 4, 334, 46, 12);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 18, 330, 18, 12);
+
+            ctx.fillStyle = palette.grassHighlight || '#ffffff';
+            ctx.globalAlpha = 0.6;
+            ctx.fillRect(baseX + 30, 320, 12, 6);
+            ctx.globalAlpha = 1;
         }
+    },
+    shadow: {
+        mountainSpacing: 240,
+        midgroundSpacing: 120,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX, 300);
+            ctx.lineTo(baseX + 40, 190);
+            ctx.lineTo(baseX + 70, 210);
+            ctx.lineTo(baseX + 110, 170);
+            ctx.lineTo(baseX + 150, 220);
+            ctx.lineTo(baseX + 190, 160);
+            ctx.lineTo(baseX + 230, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 70, 210);
+            ctx.lineTo(baseX + 110, 170);
+            ctx.lineTo(baseX + 126, 210);
+            ctx.lineTo(baseX + 106, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 150, 220);
+            ctx.lineTo(baseX + 190, 160);
+            ctx.lineTo(baseX + 210, 230);
+            ctx.lineTo(baseX + 176, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            const wisp = (Math.sin(now / 260 + baseX * 0.015) + 1) / 2;
+            ctx.globalAlpha = 0.4 + wisp * 0.4;
+            ctx.fillStyle = '#caa6ff';
+            ctx.fillRect(baseX + 80, 210, 12, 60);
+            ctx.fillRect(baseX + 150, 200, 10, 70);
+            ctx.globalAlpha = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 34, 276, 18, 68);
+            ctx.fillRect(baseX + 68, 262, 22, 70);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 42, 276, 8, 68);
+            ctx.fillRect(baseX + 78, 262, 8, 70);
+
+            const pulse = (Math.sin(now / 320 + baseX * 0.02) + 1) / 2;
+            ctx.globalAlpha = 0.35 + pulse * 0.35;
+            ctx.fillStyle = '#b98aff';
+            ctx.fillRect(baseX + 50, 246, 12, 26);
+            ctx.fillRect(baseX + 88, 236, 10, 24);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            const shimmer = (Math.sin(now / 400 + baseX * 0.03) + 1) / 2;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 8, 324, 34, 18);
+            ctx.fillRect(baseX + 2, 334, 44, 14);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 16, 332, 18, 12);
+
+            ctx.globalAlpha = 0.4 + shimmer * 0.4;
+            ctx.fillStyle = '#d9a6ff';
+            ctx.fillRect(baseX + 26, 318, 8, 10);
+            ctx.globalAlpha = 1;
+        }
+    },
+    crystal: {
+        mountainSpacing: 220,
+        midgroundSpacing: 110,
+        foregroundSpacing: 80,
+        drawMountains(baseX, palette, now) {
+            ctx.fillStyle = palette.mountains;
+            ctx.fillRect(baseX + 20, 220, 24, 80);
+            ctx.fillRect(baseX + 64, 200, 28, 100);
+            ctx.fillRect(baseX + 112, 210, 24, 90);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 68, 200, 12, 100);
+            ctx.fillRect(baseX + 120, 210, 8, 90);
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.fillRect(baseX + 44, 230, 10, 70);
+            ctx.fillRect(baseX + 104, 220, 10, 80);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(baseX + 90, 190, 14, 110);
+            ctx.globalAlpha = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            const shimmer = (Math.sin(now / 300 + baseX * 0.025) + 1) / 2;
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 24, 284, 18, 58);
+            ctx.fillRect(baseX + 52, 270, 16, 70);
+            ctx.fillRect(baseX + 80, 280, 14, 62);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 30, 284, 6, 58);
+            ctx.fillRect(baseX + 58, 270, 6, 70);
+
+            ctx.globalAlpha = 0.35 + shimmer * 0.45;
+            ctx.fillStyle = '#8bf4ff';
+            ctx.fillRect(baseX + 38, 260, 10, 40);
+            ctx.fillRect(baseX + 70, 254, 8, 32);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            const glint = (Math.sin(now / 260 + baseX * 0.03) + 1) / 2;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 6, 324, 30, 20);
+            ctx.fillRect(baseX + 16, 316, 20, 12);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 18, 328, 12, 14);
+
+            ctx.globalAlpha = 0.4 + glint * 0.5;
+            ctx.fillStyle = '#aef7ff';
+            ctx.fillRect(baseX + 28, 318, 8, 12);
+            ctx.globalAlpha = 1;
+        }
+    },
+    storm: {
+        mountainSpacing: 230,
+        midgroundSpacing: 120,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX - 10, 300);
+            ctx.lineTo(baseX + 40, 210);
+            ctx.lineTo(baseX + 80, 230);
+            ctx.lineTo(baseX + 120, 180);
+            ctx.lineTo(baseX + 160, 230);
+            ctx.lineTo(baseX + 210, 190);
+            ctx.lineTo(baseX + 250, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 80, 230);
+            ctx.lineTo(baseX + 120, 180);
+            ctx.lineTo(baseX + 140, 220);
+            ctx.lineTo(baseX + 110, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 160, 230);
+            ctx.lineTo(baseX + 210, 190);
+            ctx.lineTo(baseX + 230, 250);
+            ctx.lineTo(baseX + 180, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            const swirl = Math.sin(now / 200 + baseX * 0.015) * 10;
+            ctx.strokeStyle = palette.cloudLight || '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 40, 220 + swirl * 0.1);
+            ctx.bezierCurveTo(baseX + 80, 200 + swirl, baseX + 140, 210 - swirl, baseX + 190, 200);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 36, 274, 18, 70);
+            ctx.fillRect(baseX + 70, 262, 20, 72);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 44, 274, 8, 70);
+            ctx.fillRect(baseX + 78, 262, 6, 72);
+
+            const flash = Math.max(0, Math.sin(now / 180 + baseX * 0.05));
+            ctx.globalAlpha = 0.3 + flash * 0.6;
+            ctx.fillStyle = '#c5daff';
+            ctx.fillRect(baseX + 54, 240, 6, 34);
+            ctx.fillRect(baseX + 92, 236, 6, 30);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 10, 324, 36, 18);
+            ctx.fillRect(baseX + 0, 334, 48, 12);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 18, 330, 16, 12);
+
+            const spark = Math.max(0, Math.sin(now / 120 + baseX * 0.04));
+            ctx.globalAlpha = 0.4 + spark * 0.5;
+            ctx.fillStyle = '#9fc9ff';
+            ctx.fillRect(baseX + 28, 320, 8, 10);
+            ctx.globalAlpha = 1;
+        }
+    },
+    molten: {
+        mountainSpacing: 230,
+        midgroundSpacing: 140,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            const surge = Math.sin(now / 240 + baseX * 0.02) * 0.3 + 0.7;
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX - 20, 300);
+            ctx.lineTo(baseX + 20, 230);
+            ctx.lineTo(baseX + 60, 200);
+            ctx.lineTo(baseX + 90, 230);
+            ctx.lineTo(baseX + 130, 210);
+            ctx.lineTo(baseX + 170, 260);
+            ctx.lineTo(baseX + 210, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 120, 220);
+            ctx.lineTo(baseX + 170, 260);
+            ctx.lineTo(baseX + 200, 300);
+            ctx.lineTo(baseX + 140, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.globalAlpha = surge * 0.6;
+            ctx.fillStyle = '#ff7a3c';
+            ctx.fillRect(baseX + 70, 230, 36, 20);
+            ctx.fillRect(baseX + 90, 220, 12, 12);
+            ctx.globalAlpha = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            const glow = Math.sin(now / 220 + baseX * 0.03) * 0.3 + 0.7;
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 34, 278, 26, 70);
+            ctx.fillRect(baseX + 30, 268, 34, 16);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 44, 272, 12, 28);
+
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#ff9f43';
+            ctx.fillRect(baseX + 48, 292, 10, 34);
+            ctx.fillRect(baseX + 36, 302, 8, 20);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            const flicker = Math.sin(now / 180 + baseX * 0.04) * 0.25 + 0.75;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 14, 328, 36, 16);
+            ctx.fillRect(baseX + 22, 318, 20, 12);
+
+            ctx.globalAlpha = flicker;
+            ctx.fillStyle = '#ffb347';
+            ctx.fillRect(baseX + 26, 324, 16, 6);
+            ctx.fillRect(baseX + 34, 332, 12, 4);
+            ctx.globalAlpha = 1;
+        }
+    },
+    necropolis: {
+        mountainSpacing: 240,
+        midgroundSpacing: 130,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX - 10, 300);
+            ctx.lineTo(baseX + 30, 220);
+            ctx.lineTo(baseX + 70, 240);
+            ctx.lineTo(baseX + 110, 200);
+            ctx.lineTo(baseX + 150, 240);
+            ctx.lineTo(baseX + 190, 210);
+            ctx.lineTo(baseX + 230, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 110, 200);
+            ctx.lineTo(baseX + 150, 240);
+            ctx.lineTo(baseX + 176, 300);
+            ctx.lineTo(baseX + 120, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 30, 220);
+            ctx.lineTo(baseX + 70, 240);
+            ctx.lineTo(baseX + 64, 300);
+            ctx.lineTo(baseX + 24, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            const flicker = Math.sin(now / 320 + baseX * 0.02) * 0.3 + 0.7;
+            ctx.globalAlpha = 0.4 + flicker * 0.4;
+            ctx.fillStyle = '#9fffe2';
+            ctx.fillRect(baseX + 98, 216, 12, 42);
+            ctx.fillRect(baseX + 146, 226, 10, 34);
+            ctx.globalAlpha = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 32, 282, 22, 62);
+            ctx.fillRect(baseX + 70, 270, 20, 64);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 40, 282, 10, 62);
+            ctx.fillRect(baseX + 78, 270, 8, 64);
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.fillRect(baseX + 50, 258, 28, 14);
+        },
+        drawForeground(baseX, palette, now) {
+            const glow = Math.sin(now / 260 + baseX * 0.03) * 0.25 + 0.75;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 12, 324, 32, 18);
+            ctx.fillRect(baseX + 4, 334, 44, 12);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 22, 332, 14, 12);
+
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#a3fff0';
+            ctx.fillRect(baseX + 30, 320, 8, 10);
+            ctx.globalAlpha = 1;
+        }
+    },
+    dragon: {
+        mountainSpacing: 260,
+        midgroundSpacing: 140,
+        foregroundSpacing: 90,
+        drawMountains(baseX, palette, now) {
+            ctx.fillStyle = palette.mountains;
+            ctx.beginPath();
+            ctx.moveTo(baseX - 20, 300);
+            ctx.lineTo(baseX + 20, 210);
+            ctx.lineTo(baseX + 70, 240);
+            ctx.lineTo(baseX + 110, 170);
+            ctx.lineTo(baseX + 150, 240);
+            ctx.lineTo(baseX + 200, 200);
+            ctx.lineTo(baseX + 240, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainHighlight;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 70, 240);
+            ctx.lineTo(baseX + 110, 170);
+            ctx.lineTo(baseX + 130, 220);
+            ctx.lineTo(baseX + 96, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = palette.mountainShadow;
+            ctx.beginPath();
+            ctx.moveTo(baseX + 150, 240);
+            ctx.lineTo(baseX + 200, 200);
+            ctx.lineTo(baseX + 224, 260);
+            ctx.lineTo(baseX + 176, 300);
+            ctx.closePath();
+            ctx.fill();
+
+            const ember = Math.sin(now / 240 + baseX * 0.025) * 0.3 + 0.7;
+            ctx.globalAlpha = ember;
+            ctx.fillStyle = '#ff9f6a';
+            ctx.fillRect(baseX + 92, 218, 12, 36);
+            ctx.fillRect(baseX + 148, 226, 10, 30);
+            ctx.globalAlpha = 1;
+        },
+        drawMidground(baseX, palette, now) {
+            ctx.fillStyle = palette.trees;
+            ctx.fillRect(baseX + 38, 272, 24, 70);
+            ctx.fillRect(baseX + 72, 262, 22, 72);
+
+            ctx.fillStyle = palette.treeShadow;
+            ctx.fillRect(baseX + 48, 272, 10, 70);
+            ctx.fillRect(baseX + 82, 262, 8, 72);
+
+            const glow = Math.sin(now / 200 + baseX * 0.03) * 0.3 + 0.7;
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#ffb47a';
+            ctx.fillRect(baseX + 60, 244, 12, 28);
+            ctx.fillRect(baseX + 92, 238, 10, 24);
+            ctx.globalAlpha = 1;
+        },
+        drawForeground(baseX, palette, now) {
+            const glow = Math.sin(now / 180 + baseX * 0.04) * 0.25 + 0.75;
+            ctx.fillStyle = palette.bushes;
+            ctx.fillRect(baseX + 14, 326, 34, 18);
+            ctx.fillRect(baseX + 8, 336, 44, 12);
+
+            ctx.fillStyle = palette.bushShadow;
+            ctx.fillRect(baseX + 24, 332, 16, 12);
+
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#ffcb7d';
+            ctx.fillRect(baseX + 32, 320, 10, 10);
+            ctx.globalAlpha = 1;
+        }
+    }
+};
+
+function drawMountainLayer(themeName, palette, offset) {
+    const design = parallaxDesigns[themeName];
+    const now = Date.now();
+
+    if(design && typeof design.drawMountains === 'function') {
+        const spacing = design.mountainSpacing || 200;
+        const padding = Math.max(800, spacing * 4);
+        for(let x = -padding; x < canvas.width + padding; x += spacing) {
+            const baseX = x - offset;
+            design.drawMountains(baseX, palette, now);
+        }
+        ctx.globalAlpha = 1;
+        return;
+    }
+
+    const spacing = 200;
+    for(let x = -800; x < canvas.width + 800; x += spacing) {
+        const baseX = x - offset;
+        ctx.fillStyle = palette.mountains;
+        ctx.beginPath();
+        ctx.moveTo(baseX, 280);
+        ctx.lineTo(baseX + 80, 180);
+        ctx.lineTo(baseX + 160, 280);
+        ctx.fill();
+
+        ctx.fillStyle = palette.mountainHighlight;
+        ctx.beginPath();
+        ctx.moveTo(baseX + 40, 210);
+        ctx.lineTo(baseX + 80, 180);
+        ctx.lineTo(baseX + 90, 210);
+        ctx.fill();
+
+        ctx.fillStyle = palette.mountainShadow;
+        ctx.beginPath();
+        ctx.moveTo(baseX + 80, 180);
+        ctx.lineTo(baseX + 120, 220);
+        ctx.lineTo(baseX + 160, 280);
+        ctx.fill();
     }
 }
 
 function drawMidgroundLayer(themeName, palette, offset) {
+    const design = parallaxDesigns[themeName];
+    const now = Date.now();
+
+    if(design && typeof design.drawMidground === 'function') {
+        const spacing = design.midgroundSpacing || 100;
+        const padding = Math.max(600, spacing * 4);
+        for(let x = -padding; x < canvas.width + padding; x += spacing) {
+            const baseX = x - offset;
+            design.drawMidground(baseX, palette, now);
+        }
+        ctx.globalAlpha = 1;
+        return;
+    }
+
     for(let x = -600; x < canvas.width + 600; x += 100) {
         const baseX = x - offset;
-        if(themeName === 'volcano' || themeName === 'molten' || themeName === 'dragon') {
-            ctx.fillStyle = palette.trees;
-            ctx.fillRect(baseX + 36, 250, 24, 82);
-            ctx.fillRect(baseX + 32, 240, 32, 12);
+        ctx.fillStyle = palette.trees;
+        ctx.fillRect(baseX + 40, 280, 15, 50);
+        ctx.beginPath();
+        ctx.moveTo(baseX + 30, 280);
+        ctx.lineTo(baseX + 47, 250);
+        ctx.lineTo(baseX + 65, 280);
+        ctx.fill();
 
-            ctx.fillStyle = palette.mountainHighlight;
-            ctx.fillRect(baseX + 40, 242, 6, 40);
-
-            const nightStrength = game.timeState ? game.timeState.nightStrength : (game.isDay ? 0 : 1);
-            if(nightStrength > 0.05) {
-                const glow = (Math.sin(Date.now() / 200 + x * 0.02) * 0.2 + 0.8) * nightStrength;
-                ctx.globalAlpha = glow;
-                ctx.fillStyle = '#ff8a3b';
-                ctx.fillRect(baseX + 44, 280, 6, 30);
-                ctx.globalAlpha = 1;
-            }
-        } else if(themeName === 'tundra' || themeName === 'crystal') {
-            ctx.fillStyle = palette.trees;
-            ctx.fillRect(baseX + 42, 260, 12, 70);
-            ctx.fillRect(baseX + 38, 250, 20, 14);
-            ctx.fillRect(baseX + 36, 240, 24, 12);
-
-            ctx.fillStyle = palette.treeShadow;
-            ctx.fillRect(baseX + 46, 270, 4, 60);
-        } else if(themeName === 'shadow' || themeName === 'storm') {
-            ctx.fillStyle = palette.trees;
-            ctx.fillRect(baseX + 38, 260, 14, 70);
-            ctx.fillRect(baseX + 32, 250, 26, 16);
-            ctx.fillRect(baseX + 28, 240, 32, 14);
-
-            ctx.fillStyle = palette.treeShadow;
-            ctx.fillRect(baseX + 42, 268, 8, 62);
-        } else if(themeName === 'necropolis') {
-            ctx.fillStyle = palette.trees;
-            ctx.fillRect(baseX + 36, 270, 20, 60);
-            ctx.fillRect(baseX + 30, 260, 32, 18);
-
-            ctx.fillStyle = palette.treeShadow;
-            ctx.fillRect(baseX + 44, 278, 6, 52);
-        } else {
-            ctx.fillStyle = palette.trees;
-            ctx.fillRect(baseX + 40, 280, 15, 50);
-            ctx.beginPath();
-            ctx.moveTo(baseX + 30, 280);
-            ctx.lineTo(baseX + 47, 250);
-            ctx.lineTo(baseX + 65, 280);
-            ctx.fill();
-
-            ctx.fillStyle = palette.treeShadow;
-            ctx.beginPath();
-            ctx.moveTo(baseX + 32, 270);
-            ctx.lineTo(baseX + 47, 240);
-            ctx.lineTo(baseX + 56, 270);
-            ctx.fill();
-        }
+        ctx.fillStyle = palette.treeShadow;
+        ctx.beginPath();
+        ctx.moveTo(baseX + 32, 270);
+        ctx.lineTo(baseX + 47, 240);
+        ctx.lineTo(baseX + 56, 270);
+        ctx.fill();
     }
     ctx.globalAlpha = 1;
 }
 
 function drawForegroundLayer(themeName, palette, offset) {
+    const design = parallaxDesigns[themeName];
+    const now = Date.now();
+
+    if(design && typeof design.drawForeground === 'function') {
+        const spacing = design.foregroundSpacing || 80;
+        const padding = Math.max(400, spacing * 4);
+        for(let x = -padding; x < canvas.width + padding; x += spacing) {
+            const baseX = x - offset;
+            design.drawForeground(baseX, palette, now);
+        }
+        ctx.globalAlpha = 1;
+        return;
+    }
+
     for(let x = -400; x < canvas.width + 400; x += 80) {
         const baseX = x - offset;
-        if(themeName === 'volcano' || themeName === 'molten' || themeName === 'dragon') {
-            const time = Date.now() / 300 + x * 0.02;
-            const glow = Math.sin(time) * 0.3 + 0.7;
-            ctx.globalAlpha = glow;
-            ctx.fillStyle = palette.bushes;
-            ctx.fillRect(baseX + 10, 325, 30, 10);
-            ctx.fillRect(baseX + 18, 315, 16, 10);
+        ctx.fillStyle = palette.bushes;
+        ctx.fillRect(baseX + 10, 320, 30, 20);
+        ctx.fillRect(baseX + 5, 330, 40, 15);
 
-            ctx.fillStyle = '#ffb347';
-            ctx.fillRect(baseX + 18, 327, 14, 4);
-            ctx.globalAlpha = 1;
-        } else if(themeName === 'tundra' || themeName === 'crystal') {
-            ctx.fillStyle = palette.bushes;
-            ctx.fillRect(baseX + 12, 320, 28, 20);
-            ctx.fillRect(baseX + 6, 330, 36, 12);
-
-            ctx.fillStyle = palette.bushShadow;
-            ctx.fillRect(baseX + 18, 332, 12, 16);
-        } else if(themeName === 'shadow' || themeName === 'storm') {
-            ctx.fillStyle = palette.bushes;
-            ctx.fillRect(baseX + 8, 320, 34, 18);
-            ctx.fillRect(baseX + 2, 330, 44, 16);
-
-            ctx.fillStyle = palette.bushShadow;
-            ctx.fillRect(baseX + 16, 334, 16, 12);
-        } else if(themeName === 'necropolis') {
-            ctx.fillStyle = palette.bushes;
-            ctx.fillRect(baseX + 12, 320, 32, 16);
-            ctx.fillRect(baseX + 6, 330, 36, 14);
-
-            ctx.fillStyle = palette.bushShadow;
-            ctx.fillRect(baseX + 20, 332, 12, 12);
-        } else {
-            ctx.fillStyle = palette.bushes;
-            ctx.fillRect(baseX + 10, 320, 30, 20);
-            ctx.fillRect(baseX + 5, 330, 40, 15);
-
-            ctx.fillStyle = palette.bushShadow;
-            ctx.fillRect(baseX + 18, 332, 12, 12);
-        }
+        ctx.fillStyle = palette.bushShadow;
+        ctx.fillRect(baseX + 18, 332, 12, 12);
     }
     ctx.globalAlpha = 1;
 }
