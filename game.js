@@ -940,23 +940,96 @@ function drawForegroundAccents(themeName, palette, offset) {
 }
 
 // Create squeak sound effect using Web Audio API
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext = null;
+let audioUnlocked = false;
+const isMobile = /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
 
-function playSqueak() {
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+function getOrCreateAudioContext() {
+    if(!audioContext) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if(!Ctx) {
+            return null;
+        }
+        audioContext = new Ctx();
+    }
+    return audioContext;
+}
+
+async function ensureAudioContext() {
+    const context = getOrCreateAudioContext();
+    if(!context) {
+        return null;
+    }
+
+    if(context.state === 'suspended') {
+        try {
+            await context.resume();
+        } catch(err) {
+            // Ignore resume errors - the next user interaction should succeed
+        }
+    }
+
+    return context;
+}
+
+async function unlockAudio() {
+    if(audioUnlocked) {
+        return;
+    }
+
+    const context = await ensureAudioContext();
+    if(!context) {
+        return;
+    }
+
+    const buffer = context.createBuffer(1, 1, 22050);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+
+    try {
+        source.start(0);
+    } catch(err) {
+        // Ignore start errors; unlocking attempt will re-run on next interaction
+        return;
+    }
+
+    audioUnlocked = true;
+}
+
+const audioUnlockEvents = ['touchstart', 'touchend', 'mousedown', 'pointerdown', 'keydown'];
+
+async function handleAudioUnlockEvent() {
+    await unlockAudio();
+
+    if(audioUnlocked) {
+        audioUnlockEvents.forEach(eventName => document.removeEventListener(eventName, handleAudioUnlockEvent));
+    }
+}
+
+audioUnlockEvents.forEach(eventName => document.addEventListener(eventName, handleAudioUnlockEvent, { passive: true }));
+
+async function playSqueak() {
+    const context = await ensureAudioContext();
+    if(!context) {
+        return;
+    }
+
+    const oscillator = context.createOscillator();
+    const gainNode = context.createGain();
 
     oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    gainNode.connect(context.destination);
 
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
+    oscillator.frequency.setValueAtTime(800, context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(400, context.currentTime + 0.1);
 
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    const baseGain = isMobile ? 0.55 : 0.35;
+    gainNode.gain.setValueAtTime(baseGain, context.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(Math.max(0.06, baseGain * 0.18), context.currentTime + 0.18);
 
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.1);
+    oscillator.start(context.currentTime);
+    oscillator.stop(context.currentTime + 0.2);
 }
 
 // Canvas setup
