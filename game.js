@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.3.0';
+    const declared = '3.3.1';
     let fromQuery = null;
 
     try {
@@ -53,8 +53,13 @@ const VERSION_INFO = (() => {
 
 const GAME_VERSION = VERSION_INFO.effective;
 
-const WITCH_CENTER_X = 90;
-const WITCH_CENTER_Y = 140;
+const WITCH_HEAD_X = 90;
+const WITCH_HEAD_Y = 140;
+const WITCH_SHIELD_OFFSET_X = 10;
+const WITCH_SHIELD_OFFSET_Y = 10;
+// Chest-level aim point for fireballs and shield origin: (100, 150)
+const WITCH_SHIELD_CENTER_X = WITCH_HEAD_X + WITCH_SHIELD_OFFSET_X;
+const WITCH_SHIELD_CENTER_Y = WITCH_HEAD_Y + WITCH_SHIELD_OFFSET_Y;
 const FIREBALL_MIN_INTERVAL = 2000;
 const FIREBALL_MAX_INTERVAL = 10000;
 const FIREBALL_SHIELD_RADIUS = 50;
@@ -1266,8 +1271,8 @@ function triggerWitchShield(fireball) {
         const speed = 2 + Math.random() * 3;
         const particleRadius = FIREBALL_SHIELD_RADIUS + Math.random() * 10;
         game.particles.push({
-            x: WITCH_CENTER_X + Math.cos(angle) * particleRadius,
-            y: WITCH_CENTER_Y + Math.sin(angle) * particleRadius,
+            x: WITCH_SHIELD_CENTER_X + Math.cos(angle) * particleRadius,
+            y: WITCH_SHIELD_CENTER_Y + Math.sin(angle) * particleRadius,
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed - 0.3,
             size: 2 + Math.random() * 3,
@@ -1280,8 +1285,8 @@ function triggerWitchShield(fireball) {
 }
 
 function updateFireballs() {
-    const targetX = WITCH_CENTER_X;
-    const targetY = WITCH_CENTER_Y;
+    const targetX = WITCH_SHIELD_CENTER_X;
+    const targetY = WITCH_SHIELD_CENTER_Y;
 
     for(let i = game.fireballs.length - 1; i >= 0; i--) {
         const fireball = game.fireballs[i];
@@ -1361,7 +1366,7 @@ function drawWitchShield() {
     const currentRadius = baseRadius + oscillation * 20;
 
     ctx.save();
-    ctx.translate(WITCH_CENTER_X, WITCH_CENTER_Y);
+    ctx.translate(WITCH_SHIELD_CENTER_X, WITCH_SHIELD_CENTER_Y);
     ctx.globalCompositeOperation = 'lighter';
 
     const auraGradient = ctx.createRadialGradient(0, 0, baseRadius * 0.4, 0, 0, currentRadius + 30);
