@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="cs">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -8,6 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Math Wizard</title>
     <style>
+        :root {
+            --height-scale: 1;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -32,50 +36,50 @@
             touch-action: manipulation;
         }
 
+        #gameViewport {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            padding: clamp(12px, 2vw, 24px);
+        }
+
         #gameContainer {
             width: 100%;
             height: 100%;
             max-width: 100vw;
             max-height: 100vh;
-            background: #0f3460;
             display: flex;
             flex-direction: column;
-            padding: 10px;
+            padding: 0;
+            background: linear-gradient(160deg, rgba(15, 52, 96, 0.85), rgba(9, 22, 43, 0.9));
         }
 
         #gameCanvas {
             display: block;
             background: #16213e;
-            border: 2px solid #533483;
+            border: none;
             image-rendering: pixelated;
             image-rendering: crisp-edges;
             width: 100%;
             flex: 1;
-            max-height: 50vh;
-        }
-
-        @media (min-width: 769px) {
-            #gameContainer {
-                max-width: 900px;
-                max-height: 90vh;
-                border: 4px solid #e94560;
-                border-radius: 10px;
-                padding: 20px;
-                box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
-            }
         }
 
         #questionPanel {
-            margin-top: 10px;
-            padding: 15px 10px;
-            background: #533483;
-            border-radius: 8px;
+            margin-top: max(6px, calc(10px * var(--height-scale)));
+            padding: max(12px, calc(16px * var(--height-scale))) max(10px, calc(14px * var(--height-scale)));
+            background: #29365a;
+            border-radius: 14px;
             text-align: center;
             flex-shrink: 0;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
         }
 
         #question {
-            font-size: clamp(20px, 5vw, 32px);
+            font-size: clamp(18px, calc(5vw * var(--height-scale)), calc(32px * var(--height-scale)));
             font-weight: bold;
             color: #ffd700;
             margin-bottom: 15px;
@@ -84,18 +88,18 @@
         #answersContainer {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
+            gap: max(6px, calc(10px * var(--height-scale)));
             justify-content: center;
         }
 
         .answerBtn {
-            padding: 12px 20px;
-            font-size: clamp(18px, 4vw, 24px);
+            padding: max(8px, calc(12px * var(--height-scale))) max(12px, calc(20px * var(--height-scale)));
+            font-size: clamp(16px, calc(4vw * var(--height-scale)), calc(24px * var(--height-scale)));
             font-weight: bold;
             background: linear-gradient(to bottom, #e94560, #c81e3d);
             color: white;
-            border: 3px solid #fff;
-            border-radius: 10px;
+            border: max(2px, calc(3px * var(--height-scale))) solid #fff;
+            border-radius: calc(10px * var(--height-scale));
             cursor: pointer;
             transition: all 0.2s;
             font-family: 'Courier New', monospace;
@@ -134,30 +138,39 @@
         }
 
         #scorePanel {
-            margin-top: 10px;
+            margin-top: max(6px, calc(10px * var(--height-scale)));
             display: flex;
             justify-content: space-between;
-            font-size: clamp(14px, 3vw, 20px);
+            font-size: clamp(12px, calc(3vw * var(--height-scale)), calc(20px * var(--height-scale)));
             font-weight: bold;
             flex-shrink: 0;
-            gap: 10px;
+            gap: max(6px, calc(10px * var(--height-scale)));
             flex-wrap: wrap;
             align-items: center;
         }
 
         @media (min-width: 769px) {
+            #gameContainer {
+                max-width: 900px;
+                max-height: 90vh;
+                border: max(2px, calc(3px * var(--height-scale))) solid #e94560;
+                border-radius: calc(14px * var(--height-scale));
+                padding: max(12px, calc(18px * var(--height-scale)));
+                box-shadow: 0 0 30px rgba(233, 69, 96, 0.45);
+            }
+
             #questionPanel {
-                margin-top: 20px;
-                padding: 20px;
+                margin-top: max(12px, calc(20px * var(--height-scale)));
+                padding: max(14px, calc(20px * var(--height-scale)));
             }
 
             #answersContainer {
                 display: flex;
-                gap: 15px;
+                gap: max(10px, calc(15px * var(--height-scale)));
             }
 
             #scorePanel {
-                margin-top: 15px;
+                margin-top: max(10px, calc(15px * var(--height-scale)));
             }
         }
 
@@ -168,7 +181,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.75);
             z-index: 999;
         }
 
@@ -178,36 +191,109 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.95);
+            padding: 36px 32px;
+            max-width: 480px;
+            width: calc(100% - 40px);
+            border-radius: 16px;
+            text-align: center;
+            z-index: 1000;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+            background: rgba(23, 37, 84, 0.92);
+        }
+
+        #gameOver h2 {
+            font-size: 32px;
+            color: #ffd700;
+            margin-bottom: 14px;
+        }
+
+        #finalMessage {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+
+        #gameOver p {
+            font-size: 18px;
+            margin: 6px 0;
+        }
+
+        #restartBtn {
+            margin-top: 22px;
+            display: inline-block;
+            width: min(260px, 100%);
+            padding: clamp(10px, 4vw, 14px) clamp(22px, 8vw, 36px);
+            font-size: clamp(16px, 4vw, 20px);
+            background: linear-gradient(to bottom, #ffd700, #ff9f43);
+            color: #201b30;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        #restartBtn:hover {
+            transform: scale(1.05);
+        }
+
+        #ageOverlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            z-index: 1001;
+        }
+
+        #ageModal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 52, 96, 0.95);
             padding: 40px;
             border: 4px solid #ffd700;
             border-radius: 15px;
             text-align: center;
-            z-index: 1000;
+            max-width: 480px;
+            width: calc(100% - 40px);
+            z-index: 1002;
+            color: #fff;
         }
 
-        #gameOver h2 {
-            font-size: 48px;
-            color: #e94560;
+        #ageModal h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            color: #ffd700;
+        }
+
+        #ageModal p {
+            font-size: 20px;
             margin-bottom: 20px;
         }
 
-        #finalMessage {
-            font-size: 24px;
-            margin-bottom: 15px;
+        #gradeSlider {
+            width: 100%;
+            margin: 20px 0;
         }
 
-        #gameOver p {
+        #gradeValue {
             font-size: 24px;
-            margin: 10px 0;
+            font-weight: bold;
+            margin-bottom: 20px;
         }
 
-        #restartBtn {
-            margin-top: 20px;
-            padding: 15px 40px;
-            font-size: 24px;
-            background: linear-gradient(to bottom, #ffd700, #ff8c00);
-            color: #000;
+        #startGameBtn {
+            display: inline-block;
+            width: min(260px, 100%);
+            padding: clamp(10px, 4vw, 15px) clamp(22px, 8vw, 40px);
+            font-size: clamp(16px, 4vw, 24px);
+            background: linear-gradient(to bottom, #e94560, #c81e3d);
+            color: #fff;
             border: 3px solid #fff;
             border-radius: 10px;
             cursor: pointer;
@@ -215,39 +301,53 @@
             font-family: 'Courier New', monospace;
         }
 
-        #restartBtn:hover {
-            transform: scale(1.1);
+        #startGameBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
-    <div id="gameContainer">
-        <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="gameViewport">
+        <div id="gameContainer">
+            <canvas id="gameCanvas" width="800" height="400"></canvas>
 
-        <div id="questionPanel">
-            <div id="question">7 + 6 = ?</div>
-            <div id="answersContainer"></div>
-        </div>
+            <div id="questionPanel">
+                <div id="question">0 + 0 = ?</div>
+                <div id="answersContainer"></div>
+            </div>
 
-        <div id="scorePanel">
-            <div>Score: <span id="score">0</span></div>
-            <div>Correct: <span id="correct">0</span></div>
-            <div>Version: <span id="version"></span></div>
+            <div id="scorePanel">
+                <div>Skóre: <span id="score">0</span></div>
+                <div>Správně: <span id="correct">0</span></div>
+                <div>Verze: <span id="version"></span></div>
+            </div>
         </div>
     </div>
 
     <div id="gameOver">
-        <h2 id="finalTitle">GAME OVER!</h2>
+        <h2 id="finalTitle">Konec hry</h2>
         <p id="finalMessage" style="display: none;"></p>
-        <p>Stage reached: <span id="finalStage">1</span></p>
-        <p>Total score: <span id="finalScore">0</span></p>
-        <p>Correct answers: <span id="finalCorrect">0</span></p>
-        <p>Speed bonus: <span id="speedBonus">0</span></p>
-        <button id="restartBtn">Play Again</button>
+        <p>Dosažené kolo: <span id="finalStage">1</span></p>
+        <p>Celkem bodů: <span id="finalScore">0</span></p>
+        <p>Správných odpovědí: <span id="finalCorrect">0</span></p>
+        <p>Bonus za rychlost: <span id="speedBonus">0</span></p>
+        <p>Školní ročník: <span id="finalGrade">Předškolní</span></p>
+        <button id="restartBtn">Potvrdit</button>
     </div>
 
     <div id="gameOverOverlay"></div>
 
-    <script src="game.js?v=3.3.5"></script>
+    <div id="ageOverlay"></div>
+    <div id="ageModal">
+        <h1>Math Wizard</h1>
+        <p>Zvol prosím školní ročník.</p>
+        <div id="gradeValue">Předškolní</div>
+        <input id="gradeSlider" type="range" min="0" max="13" value="0" step="1">
+        <button id="startGameBtn">Spustit</button>
+    </div>
+
+    <script src="questions.js?v=3.3.12"></script>
+    <script src="game.js?v=3.3.21"></script>
 </body>
 </html>

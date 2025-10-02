@@ -1,253 +1,628 @@
-Zadání: Rozšíření hry MathWizard pro české školní ročníky
-Úvod a průzkum požadavků
+# Plán otázek pro MathWizard (zarovnání s českým kurikulem)
 
-Na základě českých vzdělávacích osnov jsme zjistili, jaké početní dovednosti by měli žáci zvládat mentálně (zpaměti) v jednotlivých ročnících základní a střední školy. Ministerstvo školství a běžné učebnice stanovují například toto: ke konci 1. třídy žák sčítá a odčítá do 20
-doucujte.cz
-, ve 3. třídě ovládá malou násobilku do 10×10 a dělení v oboru do 100
-doucujte.cz
-, ve 4.–5. třídě zvládá sčítání a odčítání čísel až do 1 000 000 zpaměti
-doucujte.cz
- a seznamuje se se zlomky a desetinnými čísly
-doucujte.cz
-. Na druhém stupni se přidávají záporná čísla, zlomky a procenta – v 7. ročníku žáci počítají v oboru celých i racionálních čísel a umějí vyjádřit část celku zlomkem či procentem
-zs-msstrazek.cz
-. V 8. třídě už používají druhé mocniny a odmocniny (znají druhé mocniny čísel do 20 zpaměti
-zs-msstrazek.cz
-). Na střední škole se dále prohlubují všechny tyto dovednosti – studenti by měli pohotově počítat s většími čísly, procenty, mocninami, odmocninami atd.
+Účel: Definovat deset postupně náročnějších levelů pro každý ročník české školy tak, aby každý ročník začínal diagnostikou předchozích dovedností a končil rozšiřující výzvou pro rychlé mentální počítání. Obsah vychází ze souborů OTAZKY_GPT5.md a OTAZKY_CLAUDE.md.
 
-Kromě standardních požadavků jsme se inspirovali i alternativními zdroji a obtížnějšími cvičeními. Tyto nadstavbové úlohy jsme zařadili do vyšších úrovní (levelů 7–10) pro každou kategorii, aby hra nabízela výzvu i pokročilejším hráčům. Všechny otázky jsou navrženy jako krátké texty (do ~20 znaků) a jejich řešení je možné zpaměti během 2–3 vteřin – hráč nemá čas zdlouhavě počítat, musí vycházet z rychlé úvahy nebo naučených početních spojů.
+Implementační zásady:
+- Zachovejte krátké zadání na obrazovce (<20 znaků) pomocí aritmetických výrazů nebo velmi stručného textu.
+- Každá šablona musí vést k jedinému číselnému výsledku (celé číslo nebo konečné desetinné číslo); podle toho přizpůsobte formulaci.
+- "Poznámky pro generátor" popisují intervaly čísel nebo pomocné rutiny; "Ukázkové příklady" slouží pro rychlé ruční ověření.
 
-Refaktoring hry – nové funkce a nastavení
+## Předškoláci (mateřská škola, 5–6 let)
+Přehled: Budování početní představy do 10, řazení a porovnávání bez formálních algoritmů.
+- Level 1 – Počítej do 3
+  Zaměření: Subitace velmi malých skupin.
+  Poznámky pro generátor: Zobrazte 0–3 ikony, ptejte se na jejich počet.
+  Ukázkové příklady: ●● = ?, ★ = ?
+- Level 2 – Počítej do 5
+  Zaměření: Početní řada 0–5.
+  Poznámky pro generátor: Střídejte uspořádání, přijímejte číslici jako odpověď.
+  Ukázkové příklady: ★★★★ = ?, Kolik je srdcí? (5)
+- Level 3 – Porovnej rozdíl
+  Zaměření: Určit, která množina je větší o kolik.
+  Poznámky pro generátor: Dvě skupiny ≤5; dotaz „O kolik více?“.
+  Ukázkové příklady: 4 vs 2 → rozdíl?, 5 vs 5 → rozdíl?
+- Level 4 – Následující číslo
+  Zaměření: Nástupce v intervalu 0–6.
+  Poznámky pro generátor: Formát `Co je po n?`.
+  Ukázkové příklady: Po 2?, Po 5?
+- Level 5 – Přičti jedna
+  Zaměření: `n + 1` pro 0–5.
+  Poznámky pro generátor: Vyjádření `n + 1`.
+  Ukázkové příklady: 3 + 1 = ?, 5 + 1 = ?
+- Level 6 – Uber jedna
+  Zaměření: `n - 1` pro 1–6.
+  Poznámky pro generátor: Vyjádření `n - 1`.
+  Ukázkové příklady: 4 - 1 = ?, 2 - 1 = ?
+- Level 7 – Skládání do pěti
+  Zaměření: Součty do 5 bez přenosu.
+  Poznámky pro generátor: `a + b`, a,b ≤5, součet =5.
+  Ukázkové příklady: 2 + 3 = ?, 4 + 1 = ?
+- Level 8 – Skládání do šesti
+  Zaměření: Součty ≤6.
+  Poznámky pro generátor: `a + b`, součet ≤6.
+  Ukázkové příklady: 3 + 2 = ?, 1 + 4 = ?
+- Level 9 – Malé odčítání
+  Zaměření: Rozdíly v 0–6.
+  Poznámky pro generátor: `a - b`, výsledek ≥0.
+  Ukázkové příklady: 6 - 2 = ?, 5 - 3 = ?
+- Level 10 – Smíšený minidrill
+  Zaměření: Náhodné střídání úloh z úrovní 4–9.
+  Poznámky pro generátor: Míchejte nástupce, sčítání, odčítání.
+  Ukázkové příklady: Po 4?, 2 + 3 = ?, 6 - 4 = ?
+Logika progrese: Úrovně 1–4 ověřují připravenost na počítání; úrovně 5–10 upevňují fakta potřebná pro 1. třídu.
 
-Výběr ročníku na úvod: Při spuštění hry se zobrazí dialog pro volbu školního ročníku hráče. Implementuj interaktivní slider (nebo jiný výběrový prvek) s popisky pro jednotlivé úrovně: Předškolní, 1. třída ZŠ, 2. třída ZŠ, ..., 9. třída ZŠ, 1. ročník SŠ, ..., 4. ročník SŠ. Podle zvolené úrovně se ve hře nastaví odpovídající okruh otázek a obtížností.
-Textově pro aktuální roční napiš krátký souhrn oborů, které v otázkách budou.
+## 1. třída ZŠ (věk 6–7 let)
+Přehled: Automatizovat sčítání a odčítání do 20 a posílit porozumění desítkové soustavě.
+- Level 1 – Sčítání do 10
+  Zaměření: `a + b` ≤10 bez přenosu.
+  Poznámky pro generátor: Navazujte na úroveň 7 z předškoláků.
+  Ukázkové příklady: 4 + 3 = ?, 5 + 5 = ?
+- Level 2 – Odčítání do 10
+  Zaměření: `a - b` ≤10.
+  Poznámky pro generátor: Zajistěte a ≥ b.
+  Ukázkové příklady: 8 - 2 = ?, 9 - 5 = ?
+- Level 3 – Dostaň na deset
+  Zaměření: Doplňování do 10.
+  Poznámky pro generátor: Formát `7 + ? = 10`.
+  Ukázkové příklady: 6 + ? = 10, ? + 4 = 10
+- Level 4 – Sčítání do 20 (bez přechodu)
+  Zaměření: `a + b` ≤20 bez přechodu přes desítku.
+  Poznámky pro generátor: Jednotky se nesčítají přes 9.
+  Ukázkové příklady: 11 + 4 = ?, 13 + 6 = ?
+- Level 5 – Odčítání do 20 (bez půjčování)
+  Zaměření: Rozdíl ve stejném desítkovém bloku.
+  Poznámky pro generátor: Desítka se nemění.
+  Ukázkové příklady: 18 - 3 = ?, 17 - 7 = ?
+- Level 6 – Přechod přes desítku (sčítání)
+  Zaměření: Rozklad na desítku.
+  Poznámky pro generátor: Výsledek ≤20.
+  Ukázkové příklady: 8 + 7 = ?, 9 + 6 = ?
+- Level 7 – Přechod přes desítku (odčítání)
+  Zaměření: Půjčování přes desítku.
+  Poznámky pro generátor: 11–20 minus 2–9.
+  Ukázkové příklady: 15 - 8 = ?, 14 - 6 = ?
+- Level 8 – Dvojčata a skoro dvojčata
+  Zaměření: `n + n` a `n + (n±1)`.
+  Poznámky pro generátor: n v intervalu [1,10].
+  Ukázkové příklady: 7 + 7 = ?, 8 + 9 = ?
+- Level 9 – Porovnej rozdíl
+  Zaměření: `|a - b|` v intervalu 0–20.
+  Poznámky pro generátor: Dotaz „O kolik je větší?“.
+  Ukázkové příklady: 18 a 11 → rozdíl?, 12 a 12 → rozdíl?
+- Level 10 – Smíšené příklady do 20
+  Zaměření: Dvoukrokové výrazy s +/−.
+  Poznámky pro generátor: `a + b - c`, výsledek 0–20.
+  Ukázkové příklady: 6 + 5 - 3 = ?, 12 - 4 + 2 = ?
+Logika progrese: Úrovně 1–3 ověřují znalosti z mateřské školy; úrovně 4–7 pokrývají jádro 1. třídy; úrovně 8–10 posilují automatizaci a pružnost.
 
-Sjednoť finální dialog pro prohru i výhru, přidej do něj pro jaký ročník byla hra hrána. Po jeho zavření se přejde zase na okno s výběrem ročníku a možností spustit hru.
+## 2. třída ZŠ (věk 7–8 let)
+Přehled: Rozšířit mentální aritmetiku do 100 a upevnit násobilku/dělení pro 2, 3, 4, 5, 10.
+- Level 1 – Zahřívací mix do 20
+  Zaměření: Kombinace +/− pro udržení dovednosti.
+  Poznámky pro generátor: Vycházejte z úrovně 10 pro 1. třídu.
+  Ukázkové příklady: 18 - 7 = ?, 9 + 6 = ?
+- Level 2 – Skoky po desítkách
+  Zaměření: Přičítání/odčítání násobků 10.
+  Poznámky pro generátor: `a ± 10k`, výsledky ≤100.
+  Ukázkové příklady: 40 + 30 = ?, 90 - 40 = ?
+- Level 3 – Sčítání/odčítání bez přenosu
+  Zaměření: Dvojciferná čísla bez přenosu/půjčky.
+  Poznámky pro generátor: Součet jednotek <10.
+  Ukázkové příklady: 32 + 15 = ?, 84 - 20 = ?
+- Level 4 – Sčítání/odčítání s přenosem
+  Zaměření: Přenos/půjčka v dvojciferných číslech.
+  Poznámky pro generátor: Výsledek <100.
+  Ukázkové příklady: 56 + 18 = ?, 73 - 27 = ?
+- Level 5 – Násobení 2,5,10
+  Zaměření: Automatizace „jednoduchých“ řad.
+  Poznámky pro generátor: Násobitel 1–10.
+  Ukázkové příklady: 5 × 6 = ?, 10 × 8 = ?
+- Level 6 – Dělení 2,5,10
+  Zaměření: Inverzní fakta s celým výsledkem.
+  Poznámky pro generátor: Dělence jako násobky dělitele.
+  Ukázkové příklady: 60 ÷ 10 = ?, 18 ÷ 2 = ?
+- Level 7 – Násobení 3 a 4
+  Zaměření: Rozšíření řad.
+  Poznámky pro generátor: Násobitel 1–10.
+  Ukázkové příklady: 3 × 8 = ?, 4 × 9 = ?
+- Level 8 – Dělení 3 a 4
+  Zaměření: Procvičení rodin příkladů.
+  Poznámky pro generátor: Dělence ≤48.
+  Ukázkové příklady: 24 ÷ 3 = ?, 32 ÷ 4 = ?
+- Level 9 – Zdvojnásob a půlkuj
+  Zaměření: Mentální ×2 a ÷2 do 100.
+  Poznámky pro generátor: Zahrňte i lichá čísla.
+  Ukázkové příklady: Dvojnásobek 27 = ?, Polovina 86 = ?
+- Level 10 – Dvoukrokové úlohy do 100
+  Zaměření: Kombinace ± a ×/÷ s „přátelskými“ čísly.
+  Poznámky pro generátor: Výsledek ≤100.
+  Ukázkové příklady: 3 × 5 + 10 = ?, 80 ÷ 4 - 7 = ?
+Logika progrese: Úrovně 1–2 opakují; 3–8 přidávají nová fakta; 9–10 propojují násobení a vícekrokové myšlení.
 
-Lokalizace do češtiny: Všechny texty ve hře budou nově v češtině. To zahrnuje zadání matematických příkladů, popisky uživatelského rozhraní i případné hlášky. Např. namísto „Score“ bude „Skóre“ apod. (Pozn.: Číslice a matematické symboly samozřejmě zůstávají stejné; jde o doprovodné texty.)
+## 3. třída ZŠ (věk 8–9 let)
+Přehled: Ovládnout celou malou násobilku/dělení 1–10 a mentálně pracovat se třímístnými čísly.
+- Level 1 – Dvojciferné opakování
+  Zaměření: Mix ±/× z 2. třídy.
+  Poznámky pro generátor: Zahrňte odčítání s půjčkou.
+  Ukázkové příklady: 64 - 28 = ?, 4 × 7 = ?
+- Level 2 – Násobilka 6 a 7
+  Zaměření: Obtížnější řady.
+  Poznámky pro generátor: Násobitel 1–10.
+  Ukázkové příklady: 6 × 8 = ?, 7 × 9 = ?
+- Level 3 – Násobilka 8 a 9
+  Zaměření: Závěrečné řady.
+  Poznámky pro generátor: Násobitel 1–10.
+  Ukázkové příklady: 8 × 9 = ?, 9 × 7 = ?
+- Level 4 – Dělení 6–9
+  Zaměření: Inverzní vyvolávání.
+  Poznámky pro generátor: Dělence ≤81.
+  Ukázkové příklady: 72 ÷ 8 = ?, 54 ÷ 6 = ?
+- Level 5 – Smíšený násobkový drill
+  Zaměření: Libovolné dvojice 1–10.
+  Poznámky pro generátor: Náhodně vybírejte.
+  Ukázkové příklady: 4 × 9 = ?, 3 × 7 = ?
+- Level 6 – Smíšený drill dělení
+  Zaměření: `a ÷ b`, b ∈ [1,10].
+  Poznámky pro generátor: Podíl celé číslo ≤10.
+  Ukázkové příklady: 81 ÷ 9 = ?, 56 ÷ 7 = ?
+- Level 7 – Třímístná ± (bez přenosu)
+  Zaměření: Přičítání/odčítání stovek a desítek.
+  Poznámky pro generátor: Jednotky nulové.
+  Ukázkové příklady: 320 + 140 = ?, 760 - 230 = ?
+- Level 8 – Třímístná ± (s přenosem)
+  Zaměření: Půjčka/přenos přes stovky.
+  Poznámky pro generátor: Výsledek <1000.
+  Ukázkové příklady: 487 + 268 = ?, 703 - 189 = ?
+- Level 9 – 2cif × 1cif
+  Zaměření: Mentální částečné součiny.
+  Poznámky pro generátor: Součiny ≤300.
+  Ukázkové příklady: 24 × 3 = ?, 17 × 4 = ?
+- Level 10 – Rodiny příkladů
+  Zaměření: Dvoukrokové kombinace, včetně závorek.
+  Poznámky pro generátor: `(a × b) ± c`, `(a ÷ b) + c`.
+  Ukázkové příklady: (8 × 9) ÷ 4 = ?, 5 × 6 - 12 = ?
+Logika progrese: Úrovně 1–4 upevňují náročná fakta; 5–8 prohlubují počítání; 9–10 propojují násobení/dělení s vícekrokovým uvažováním.
 
-Deset úrovní (levels) pro každý ročník: Hra má mít 10 postupných levelů. Pro každý ročník definuj zvlášť sadu úloh pro level 1 až 10. Level 1 představuje nejjednodušší typ příkladů (látka na začátku daného ročníku), level 10 nejobtížnější (látka probíraná koncem ročníku). Nižší levely tedy opakují či lehce rozšiřují požadavky z předchozího roku, vyšší levely zahrnou i pokročilejší učivo daného ročníku.
+## 4. třída ZŠ (věk 9–10 let)
+Přehled: Konsolidovat operace s velkými čísly, zavést zlomky a desetinná čísla, propojit aritmetiku s geometrií.
+- Level 1 – Vyjádření řádů
+  Zaměření: Hodnota číslice v číslech do šesti míst.
+  Poznámky pro generátor: Dotazy typu „Jakou hodnotu má 5 ve 352 546?“.
+  Ukázkové příklady: Hodnota 5 v 352 546 = ?, Počet stovek v 68 400 = ?
+- Level 2 – Čtyřmístná ± (bez přenosu)
+  Zaměření: Mentální součty/rozdíly čistých řádů.
+  Poznámky pro generátor: Pracujte s tisíci a stovkami.
+  Ukázkové příklady: 2 300 + 1 400 = ?, 8 500 - 2 200 = ?
+- Level 3 – Čtyřmístná ± (s přenosem)
+  Zaměření: Jedno až dvě půjčení/přenosy.
+  Poznámky pro generátor: Výsledek <10 000.
+  Ukázkové příklady: 4 785 + 2 368 = ?, 9 002 - 3 678 = ?
+- Level 4 – 2cif × 1cif (větší činitelé)
+  Zaměření: Součiny ≤600.
+  Poznámky pro generátor: Dovolte přenos v desítkách.
+  Ukázkové příklady: 36 × 7 = ?, 48 × 6 = ?
+- Level 5 – 3cif ÷ 1cif
+  Zaměření: Přesné dělení s malými zbytky.
+  Poznámky pro generátor: Lze zobrazit zbytek zvlášť.
+  Ukázkové příklady: 144 ÷ 6 = ?, 225 ÷ 5 = ?
+- Level 6 – Zlomek z celku
+  Zaměření: Poloviny, třetiny, čtvrtiny do 100.
+  Poznámky pro generátor: Počítejte `zlomek × celek`.
+  Ukázkové příklady: 1/2 z 18 = ?, 3/4 z 40 = ?
+- Level 7 – Rozdíl zlomků (stejné jmenovatele)
+  Zaměření: Zlomky se stejným jmenovatelem.
+  Poznámky pro generátor: Jmenovatele 4, 6, 8, 10.
+  Ukázkové příklady: 3/4 - 2/4 = ?, 7/10 - 3/10 = ?
+- Level 8 – Desetinná čísla (desetiny/stotiny)
+  Zaměření: Sčítání/odčítání s max. dvěma desetinnými místy.
+  Poznámky pro generátor: Zarovnejte desetinnou čárku.
+  Ukázkové příklady: 2,5 + 1,2 = ?, 5,0 - 0,7 = ?
+- Level 9 – Obsah/obvod obdélníku
+  Zaměření: Převod na násobení/sčítání.
+  Poznámky pro generátor: Strany ≤30; výsledek celé číslo.
+  Ukázkové příklady: Obsah 6 × 4 = ?, Obvod 9 + 9 + 4 + 4 = ?
+- Level 10 – Smíšené zlomky/desetinná čísla
+  Zaměření: Převody a operace.
+  Poznámky pro generátor: Kombinujte poloviny/čtvrtiny s desetinnými čísly.
+  Ukázkové příklady: 1/2 + 0,25 = ?, 12 ÷ 0,5 = ?
+Logika progrese: Úrovně 1–3 řeší řády a velká čísla; 4–8 školní učivo; 9–10 propojují geometrii a konverze.
 
-Tematické zaměření levelů: Každý level se zaměří na jednu oblast počítání (aby si hráč postupně procvičil vše). Např. pro 2. třídu ZŠ bude level 1 obsahovat sčítání a odčítání do 10 s kladnými čísly (základ 1. třídy), level 2 podobně do 20, pozdější levely pak zahrnou sčítání a odčítání do 100, jednoduché násobení atd. U starších žáků se v nižších levelech objeví kombinace základních početních operací s většími čísly, v vyšších pak např. procenta, mocniny, zlomky apod. (viz detailní rozpis níže).
+## 5. třída ZŠ (věk 10–11 let)
+Přehled: Ovládat desetinná čísla a zlomky, zavést procenta.
+- Level 1 – Desetinná čísla: sčítání/odčítání
+  Zaměření: Operace s desetinnými čísly na setiny.
+  Poznámky pro generátor: Součty ≤20.
+  Ukázkové příklady: 6,25 + 3,5 = ?, 9,4 - 2,75 = ?
+- Level 2 – Ekvivalentní zlomky
+  Zaměření: Doplnění čitatele/jmenovatele nebo převod na desetinné číslo.
+  Poznámky pro generátor: Jmenovatele 4, 5, 8, 10.
+  Ukázkové příklady: 3/4 = ?/8, 2/5 = ? (0,4)
+- Level 3 – Zlomek ± (stejné jmenovatele)
+  Zaměření: Jmenovatele 4, 5, 8, 10.
+  Poznámky pro generátor: Součet ≤2.
+  Ukázkové příklady: 3/10 + 4/10 = ?, 5/8 - 1/8 = ?
+- Level 4 – Zlomek ↔ procenta ↔ desetinné číslo
+  Zaměření: Klíčové převody.
+  Poznámky pro generátor: 1/2, 1/4, 3/4, 1/5, 1/10.
+  Ukázkové příklady: 1/2 = ? %, 0,2 = ? %
+- Level 5 – Procento z celku
+  Zaměření: 10 %, 20 %, 25 %, 50 %, 75 %.
+  Poznámky pro generátor: Celky dělitelné daným procentem.
+  Ukázkové příklady: 25 % z 80 = ?, 10 % ze 140 = ?
+- Level 6 – Násobení desetinného čísla celým číslem
+  Zaměření: Max. dvě desetinná místa.
+  Poznámky pro generátor: Výsledek ≤200.
+  Ukázkové příklady: 3,4 × 5 = ?, 12 × 0,8 = ?
+- Level 7 – Dělení a násobení 10, 100, 1000
+  Zaměření: Posuny desetinné čárky.
+  Poznámky pro generátor: Zahrňte celá i desetinná čísla.
+  Ukázkové příklady: 720 ÷ 10 = ?, 0,36 × 100 = ?
+- Level 8 – Smíšená čísla
+  Zaměření: Sčítání/odčítání půlek a čtvrtin.
+  Poznámky pro generátor: Interně převádějte na nepravé zlomky.
+  Ukázkové příklady: 1 1/2 + 1/4 = ?, 2 - 3/4 = ?
+- Level 9 – Aritmetický průměr
+  Zaměření: Průměr 3–4 čísel.
+  Poznámky pro generátor: Součet dělitelný počtem čísel.
+  Ukázkové příklady: Průměr 6, 8, 10 = ?, Průměr 12, 15, 9, 14 = ?
+- Level 10 – Vícekroková procenta/zlomky
+  Zaměření: Kombinace převodů a aritmetiky.
+  Poznámky pro generátor: Např. „najdi 30 % a odečti“.
+  Ukázkové příklady: 120 - 25 % z 120 = ?, 30 % z 80 + 0,5 = ?
+Logika progrese: Úrovně 1–3 opakují; prostřední budují procenta; vrcholové spojují reprezentace.
 
-Generování otázek: Pro každý level naprogramuj generování náhodných příkladů definovaného typu a rozsahu čísel. Výsledek příkladu by měl vždy vyjít jako jednoduché číslo (celé číslo, případně jednoduchý zlomek nebo desetinné číslo, pokud je to v daném ročníku na místě). Všechny otázky musí mít číselnou odpověď, kterou hráč rychle vypočítá z hlavy. Formulace otázek bude většinou ve tvaru prostého příkladu (např. 7 + 8 = ?), případně krátkého výrazu či rovnice. Vyvaruj se dlouhého textu nebo slovních úloh – čas na čtení je omezen. Délka zadání cca do 20 znaků zajistí přehlednost na obrazovce. Příklady by měly pokrýt celé požadované rozpětí dané látky náhodně (aby se hráč neučil nazpaměť pořadí).
+## 6. třída ZŠ (věk 11–12 let)
+Přehled: Formalizovat teorii čísel, pracovat se zlomky a desetinnými čísly, řešit poměry a procentní změny.
+- Level 1 – Připomenutí zlomků/procent
+  Zaměření: Rychlé převody.
+  Poznámky pro generátor: Náhodné hodnoty z běžných zlomků.
+  Ukázkové příklady: 0,75 = ? %, 30 % = ? jako desetinné číslo
+- Level 2 – Dělitelnost přes zbytek
+  Zaměření: Mentální dělení pro kontrolu dělitelnosti.
+  Poznámky pro generátor: Ptejte se na zbytek nebo výsledek.
+  Ukázkové příklady: Zbytek 85 ÷ 6 = ?, 96 ÷ 6 = ?
+- Level 3 – Prvočísla a faktory
+  Zaměření: Nejmenší prvočíselný dělitel, následující prvočíslo.
+  Poznámky pro generátor: Čísla 20–100.
+  Ukázkové příklady: Nejmenší prvočíselný dělitel 91 = ?, Další prvočíslo po 47 = ?
+- Level 4 – NSD/NSN
+  Zaměření: Největší společný dělitel a nejmenší společný násobek ≤60.
+  Poznámky pro generátor: Kombinujte nesoudělná i sdílející faktory.
+  Ukázkové příklady: NSD(24,36) = ?, NSN(12,18) = ?
+- Level 5 – Zlomky s různými jmenovateli
+  Zaměření: Sčítání/odčítání s jmenovateli 6, 8, 12.
+  Poznámky pro generátor: Zajistěte rozumné NSN.
+  Ukázkové příklady: 1/3 + 1/4 = ?, 5/6 - 1/8 = ?
+- Level 6 – Násobení a dělení zlomků
+  Zaměření: Správné i nepravé zlomky.
+  Poznámky pro generátor: Výsledek zjednodušte.
+  Ukázkové příklady: 3/4 × 2/3 = ?, 5/6 ÷ 1/3 = ?
+- Level 7 – Desetinná čísla × a ÷
+  Zaměření: Desetinná čísla na setiny.
+  Poznámky pro generátor: Zahrňte dělení desetinami.
+  Ukázkové příklady: 4,2 × 3 = ?, 2,5 ÷ 0,5 = ?
+- Level 8 – Poměry a úměry
+  Zaměření: Doplňování chybějící složky `a:b = c:?`.
+  Poznámky pro generátor: Výsledky ≤50.
+  Ukázkové příklady: 3:5 = ? : 20, 12:18 zjednodušeně = ?
+- Level 9 – Procentní změna
+  Zaměření: Zvýšení/snížení o 5–25 %.
+  Poznámky pro generátor: Výsledek celé číslo nebo jedno desetinné místo.
+  Ukázkové příklady: Zvýš 80 o 10 % = ?, Sniž 150 o 20 % = ?
+- Level 10 – Geometrie s desetinnými čísly
+  Zaměření: Obvod/obsah s desetinnými délkami.
+  Poznámky pro generátor: Obdélníky/prav. trojúhelníky s přátelskými hodnotami.
+  Ukázkové příklady: Obsah 0,5 × 8 × 5 = ?, Obvod 3,5 + 4,2 + 5,1 = ?
+Logika progrese: Úrovně 1–3 opakují; 4–7 rozvíjejí aritmetiku; 8–10 integrují poměry a geometrii.
 
-Odpovědi a časový limit: Hráč bude odpovídat na každý příklad přímo číselným výsledkem. Vzhledem k zaměření na pamětní počítání nastav vhodně časový limit na odpověď (např. ~3 vteřiny). To už ve hře částečně je (zrychlování příšery při špatné odpovědi apod.), ale ujisti se, že obtížnost odpovídá schopnostem – tj. příklady jsou dost jednoduché, aby šly stihnout.
+## 7. třída ZŠ (věk 12–13 let)
+Přehled: Zavést celá čísla, prohloubit práci se zlomky/procenty a začít řešit lineární rovnice.
+- Level 1 – Pozitivní zahřátí
+  Zaměření: ± v intervalu 0–100.
+  Poznámky pro generátor: Zahrňte půjčování.
+  Ukázkové příklady: 75 - 48 = ?, 36 + 27 = ?
+- Level 2 – Sčítání/odčítání záporných čísel
+  Zaměření: Součty a rozdíly v intervalu [-50,50].
+  Poznámky pro generátor: Včetně přechodu přes nulu.
+  Ukázkové příklady: -7 + 12 = ?, 18 - 25 = ?
+- Level 3 – Násobení/dělení celých čísel
+  Zaměření: Pravidla pro znaménka.
+  Poznámky pro generátor: Činitele ≤12.
+  Ukázkové příklady: (-6) × 7 = ?, -48 ÷ 6 = ?
+- Level 4 – Výrazy se závorkami
+  Zaměření: Pořadí operací, záporné číslo v závorce.
+  Poznámky pro generátor: Zahrňte záporné závorky.
+  Ukázkové příklady: 5 - (-3) = ?, -2 - (4 - 7) = ?
+- Level 5 – Zlomky se znaménky
+  Zaměření: Sčítání/odčítání se společným jmenovatelem.
+  Poznámky pro generátor: Jmenovatel 6, 8, 12.
+  Ukázkové příklady: -3/4 + 1/2 = ?, 5/6 - (-1/6) = ?
+- Level 6 – Procenta v praxi
+  Zaměření: Najdi část, celek nebo procentní sazbu.
+  Poznámky pro generátor: Zajistěte celá čísla.
+  Ukázkové příklady: 15 % z 80 = ?, 24 je 30 % z ? = ?
+- Level 7 – Dosazování do výrazů
+  Zaměření: Dosazení celých čísel.
+  Poznámky pro generátor: Výrazy typu `2a - 3b`.
+  Ukázkové příklady: Pro x=-3: 2x + 5 = ?, Pro a=4: 3a - 2 = ?
+- Level 8 – Jednokrokové rovnice
+  Zaměření: `ax + b = c`.
+  Poznámky pro generátor: Řešení celé číslo.
+  Ukázkové příklady: x + 7 = 3, x = ?, 3x = -12, x = ?
+- Level 9 – Dvoukrokové rovnice a úměry
+  Zaměření: `2x - 5 = 11`, `x/3 = 5/9`.
+  Poznámky pro generátor: Řešení celé nebo jednoduchý zlomek.
+  Ukázkové příklady: 2x - 5 = 11, x = ?, x/3 = 5/9, x = ?
+- Level 10 – Smíšený drill
+  Zaměření: Vícekrokové výrazy s celými čísly a zlomky.
+  Poznámky pro generátor: Kombinujte celá čísla, zlomky, procenta.
+  Ukázkové příklady: (-4 + 9) × 2 = ?, 0,2 × (-15) + 6 = ?
+Logika progrese: Úrovně 1–2 opakují kladná čísla; 3–7 budují práci se znaménky; 8–10 přinášejí jednoduchou algebru.
 
-Testování (AGENTS.md): V testovacích scénářích budeme chtít ověřit správnost generování a vyhodnocení odpovědí. Pro každý level se automaticky vygeneruje sada 20 náhodných otázek i s odpověďmi a otestuje se, že hra správně rozpozná správné vs. špatné odpovědi. Uprav proto případně kód tak, aby výsledky byly jednoznačné a porovnání odpovědí spolehlivé (pozor např. na zaokrouhlování u desetinných čísel, formát zlomků atd.). Ve výpisu níže uvádíme ukázkové otázky a správné odpovědi pro každý ročník a každý level – slouží jako příklad očekávaného formátu a obtížnosti. Testy budou obdobné, ale s náhodně vygenerovanými čísly.
+## 8. třída ZŠ (věk 13–14 let)
+Přehled: Memorovat mocniny a odmocniny, uplatnit pravidla exponentů, řešit rovnice se zlomky a použít Pythagorovu větu.
+- Level 1 – Diagnostika základů
+  Zaměření: Rychlá kontrola dovedností z 7. třídy.
+  Poznámky pro generátor: Kombinujte celá čísla, zlomky, procenta.
+  Ukázkové příklady: -18 + 27 = ?, 25 % z 60 = ?
+- Level 2 – Druhé mocniny do 15^2
+  Zaměření: Zapamatování čtverců.
+  Poznámky pro generátor: n ∈ [1,15].
+  Ukázkové příklady: 12^2 = ?, 15^2 = ?
+- Level 3 – Druhé odmocniny dokonalých čtverců
+  Zaměření: Hlavní odmocniny ≤225.
+  Poznámky pro generátor: Uvádějte kladnou odmocninu.
+  Ukázkové příklady: √144 = ?, √196 = ?
+- Level 4 – Třetí mocniny a odmocniny
+  Zaměření: 2^3–6^3 a jejich inverze.
+  Poznámky pro generátor: Hodnoty {8, 27, 64, 125, 216}.
+  Ukázkové příklady: 4^3 = ?, ³√125 = ?
+- Level 5 – Pravidla pro exponenty
+  Zaměření: Násobení/dělení stejných základen.
+  Poznámky pro generátor: Výsledky ≤ 10^4.
+  Ukázkové příklady: 2^3 × 2^4 = ?, 3^5 ÷ 3^2 = ?
+- Level 6 – Výrazy s mocninami
+  Zaměření: Dosazení do výrazů s exponenty.
+  Poznámky pro generátor: Výsledky <500.
+  Ukázkové příklady: Pro a=3: 2a^2 + 1 = ?, 5^2 - 3^2 = ?
+- Level 7 – Lineární rovnice se zlomky
+  Zaměření: Řešení pro x.
+  Poznámky pro generátor: Jmenovatele ≤6.
+  Ukázkové příklady: (2/3)x = 8, x = ?, x/4 + 3 = 7, x = ?
+- Level 8 – Pythagorovské trojice
+  Zaměření: Doplňování stran pravoúhlého trojúhelníku.
+  Poznámky pro generátor: Trojice (3,4,5), (5,12,13), (8,15,17).
+  Ukázkové příklady: Odvěsny 3 a 4 → přepona?, Přepona 13, odvěsna 5 → druhá odvěsna?
+- Level 9 – Jednoduché kvadratické rovnice
+  Zaměření: `x^2 = k`, x ≥ 0.
+  Poznámky pro generátor: k dokonalý čtverec ≤400.
+  Ukázkové příklady: x^2 = 121, x = ?, x^2 = 64, x = ?
+- Level 10 – Kombinované výzvy s mocninami
+  Zaměření: Propojit mocniny, odmocniny a lineární rovnice.
+  Poznámky pro generátor: Výrazy typu `√81 + 2^2`, `2x + 5 = √121`.
+  Ukázkové příklady: √81 + 16 = ?, 2x + 5 = 11, x = ?
+Logika progrese: Úroveň 1 rekapituluje; 2–6 budují exponenty; 7–10 propojují algebru a geometrii.
 
-Uvedené příklady se týkají malých příšerek, kde má hráč několik vteřin času. Finální boss má 5 životů a otázky musí být řešitelné okamžitě z hlavy bez počítání, takže tam zařaď jen snadnou skupinu otázek.
+## 9. třída ZŠ (věk 14–15 let)
+Přehled: Přechod k středoškolské algebře – diskriminant, rozklad kvadratických rovnic, racionální výrazy, soustavy a úvod do goniometrie.
+- Level 1 – Mocniny a lineární start
+  Zaměření: Opakování 8. třídy.
+  Poznámky pro generátor: Kombinujte čtverce a lineární rovnice.
+  Ukázkové příklady: (-4)^2 = ?, 3x + 4 = 16, x = ?
+- Level 2 – Výpočty `(x ± y)^2`
+  Zaměření: Numerická hodnota vzorců.
+  Poznámky pro generátor: Celá čísla ≤15.
+  Ukázkové příklady: Pro x=3,y=5: (x + y)^2 = ?, Pro x=9,y=4: (x - y)^2 = ?
+- Level 3 – Diskriminant
+  Zaměření: Výpočet `b^2 - 4ac`.
+  Poznámky pro generátor: Koeficienty vedou k nezápornému Δ.
+  Ukázkové příklady: Pro x^2 - 6x + 8: Δ = ?, Pro 2x^2 + 3x - 5: Δ = ?
+- Level 4 – Faktorizovatelné kvadratické rovnice
+  Zaměření: Najděte vybraný kořen.
+  Poznámky pro generátor: Uveďte, který kořen hráč hledá.
+  Ukázkové příklady: Větší kořen x^2 - 7x + 12 = 0 = ?, Kladný kořen x^2 - 4x - 21 = 0 = ?
+- Level 5 – Hodnocení racionálních výrazů
+  Zaměření: Dosazení bezpečných celých hodnot.
+  Poznámky pro generátor: Vyhněte se nulovému jmenovateli.
+  Ukázkové příklady: Pro x=2: (x^2 - 4)/(x + 2) = ?, Pro x=3: (x + 1)/(x - 1) = ?
+- Level 6 – Zjednoduš před dosazením
+  Zaměření: Dosadit po zrušení.
+  Poznámky pro generátor: Volte x tak, aby šlo krátit.
+  Ukázkové příklady: Pro x=6: (x^2 - 9)/(x - 3) = ?, Pro x=5: (x^2 - 25)/(x - 5) = ?
+- Level 7 – Řešení soustav 2×2
+  Zaměření: Vraťte x nebo y.
+  Poznámky pro generátor: Řešení v celých číslech.
+  Ukázkové příklady: {x + y = 10, x - y = 2} → x = ?, {2x + y = 11, x - y = 1} → y = ?
+- Level 8 – Procenta a poměry recap
+  Zaměření: Aplikovaná aritmetika.
+  Poznámky pro generátor: Kombinujte procentní změnu a krácení poměru.
+  Ukázkové příklady: 20 % z 250 = ?, Zkrať 45:60 = ?
+- Level 9 – Goniometrické hodnoty
+  Zaměření: sin, cos, tan pro význačné úhly.
+  Poznámky pro generátor: Výsledky 0, ±1/2, ±√3/2, ±1.
+  Ukázkové příklady: sin 30° = ?, tan 45° = ?
+- Level 10 – Smíšená algebra + goniometrie
+  Zaměření: Kombinace kvadratického kořene a trigonometrie.
+  Poznámky pro generátor: Výsledek jedno číslo.
+  Ukázkové příklady: √81 + sin 30° = ?, Pokud x^2 = 25 a x > 0, spočítej x + cos 60° = ?
+Logika progrese: Úrovně 1–3 opakují; 4–7 řeší rovnice a výrazy; 8–10 přidávají aplikovanou aritmetiku a trigonometrické hodnoty.
 
-Návrh úrovní a ukázkové příklady
+## 1. ročník SŠ (věk 15–16 let)
+Přehled: Posílit lineární algebru, vyhodnocování funkcí a základy analytické geometrie.
+- Level 1 – Zjednoduš lineární výraz
+  Zaměření: Vyhodnocení po dosazení.
+  Poznámky pro generátor: Uveďte hodnotu proměnné.
+  Ukázkové příklady: Pro x=4: 3(x + 2) = ?, Pro a=5: 5a - 3a + 4 = ?
+- Level 2 – Dvoukrokové lineární rovnice
+  Zaměření: Řešení pro x.
+  Poznámky pro generátor: Koeficienty do ±12.
+  Ukázkové příklady: 2x - 5 = 9, x = ?, (3/4)x + 2 = 5, x = ?
+- Level 3 – Soustavy lineárních rovnic
+  Zaměření: Eliminace/dosazení.
+  Poznámky pro generátor: V dotazu specifikujte hledanou proměnnou.
+  Ukázkové příklady: {2x + y = 11, x - y = 1} → x = ?, {x + 2y = 7, x - y = 1} → y = ?
+- Level 4 – Vyhodnocení lineárních funkcí
+  Zaměření: f(x) = ax + b.
+  Poznámky pro generátor: Včetně záporných x.
+  Ukázkové příklady: f(x)=3x-4, f(5)=?, g(x)=-2x+7, g(-3)=?
+- Level 5 – Směrnice přímky
+  Zaměření: Směrnice ze dvou bodů nebo z rovnice.
+  Poznámky pro generátor: Výsledek celé číslo.
+  Ukázkové příklady: Body (1,3) a (4,9) → směrnice?, Pro y=2x-5 → směrnice?
+- Level 6 – Lineární nerovnice
+  Zaměření: Vyřešit a uvést hranici.
+  Poznámky pro generátor: Jednoduché výsledky typu `x > 3`.
+  Ukázkové příklady: 3x - 4 > 5 ⇒ nejmenší celé číslo > řešení?, -2x + 6 ≤ 0 ⇒ x ≥ ?
+- Level 7 – Vyhodnocení polynomů
+  Zaměření: Dosazení do kvadratů/kubiků.
+  Poznámky pro generátor: Koeficienty ≤5.
+  Ukázkové příklady: Pro x=-1: x^2 + 3x + 2 = ?, Pro x=2: (x - 1)(x + 3) = ?
+- Level 8 – Kořeny z faktorizovaného tvaru
+  Zaměření: Najít součet/produkt kořenů.
+  Poznámky pro generátor: Uveďte faktorizovaný tvar.
+  Ukázkové příklady: Kořeny (x - 2)(x + 5) = 0 → větší kořen?, Součin kořenů (x - 3)(x - 4) = ?
+- Level 9 – Vzdálenost bodů
+  Zaměření: Vzdálenost ve 2D podle Pythagora.
+  Poznámky pro generátor: Souřadnice dávají „přátelskou“ vzdálenost.
+  Ukázkové příklady: dist((0,0),(6,8)) = ?, dist((2,3),(5,7)) = ?
+- Level 10 – Lineární modelování
+  Zaměření: Převod jednoduchého scénáře na výpočet.
+  Poznámky pro generátor: Např. aritmetická posloupnost.
+  Ukázkové příklady: Začátek 50, přičítej 7 → hodnota v 5. kroku?, Přímka prochází (2,5) se směrnicí 3 ⇒ hodnota v x=4?
+Logika progrese: Úrovně 1–4 opakují algebru; 5–8 rozšiřují na směrnice/polynomy; 9–10 propojují s geometrií a modely.
 
-Níže je rozpracováno, jaké okruhy by jednotlivé levely (1–10) měly obsahovat pro hráče daného ročníku. U každého levelu je stručně uvedeno zaměření a několik příkladů s uvedenou správnou odpovědí (v závorce). Tyto příklady jsou v českém jazyce a dodržují požadavek krátké formulace. Při implementaci v kódu použij stejný princip generování; konkrétní čísla se budou náhodně obměňovat.
+## 2. ročník SŠ (věk 16–17 let)
+Přehled: Kvadratické rovnice, posloupnosti, exponenciály, logaritmy a goniometrie.
+- Level 1 – Kvadratické opakování
+  Zaměření: Faktorizovatelné kvadratické rovnice.
+  Poznámky pro generátor: Uveďte, který kořen vrátit.
+  Ukázkové příklady: Kladný kořen x^2 - 9 = 0 = ?, Větší kořen x^2 - x - 12 = 0 = ?
+- Level 2 – Kvadratický vzorec
+  Zaměření: Použití vzorce s dokonalým diskriminantem.
+  Poznámky pro generátor: Řešení racionální.
+  Ukázkové příklady: x^2 - 4x - 21 = 0 → x = ?, 2x^2 - 3x - 5 = 0 → x = ?
+- Level 3 – Posloupnosti
+  Zaměření: Další člen nebo n-tý člen.
+  Poznámky pro generátor: Celé výsledky.
+  Ukázkové příklady: Další člen 5,8,11,? = ?, 7. člen (a1=2, d=3) = ?
+- Level 4 – Exponenciální výrazy
+  Zaměření: `a^n` a jejich kombinace.
+  Poznámky pro generátor: Základy 2,3,5; exponenty ≤6.
+  Ukázkové příklady: 3^4 = ?, 5^3 × 5^2 = ?
+- Level 5 – Logaritmy
+  Zaměření: Výpočet logaritmů s přátelskými argumenty.
+  Poznámky pro generátor: Základ 2, 3, 10.
+  Ukázkové příklady: log2 32 = ?, log10 1000 = ?
+- Level 6 – Goniometrické hodnoty
+  Zaměření: sin/cos/tan pro standardní úhly (stupně a radiány).
+  Poznámky pro generátor: Uveďte π/6, π/4, π/3.
+  Ukázkové příklady: cos 60° = ?, sin (π/6) = ?
+- Level 7 – Jednoduché goniometrické rovnice
+  Zaměření: Nejmenší kladné řešení v 0°–360°.
+  Poznámky pro generátor: Pracujte s tabulkovými hodnotami.
+  Ukázkové příklady: sin x = 0,5 → nejmenší x = ?, cos x = 0 → nejmenší kladné x = ?
+- Level 8 – Složené funkce
+  Zaměření: g(f(x)) a f(g(x)).
+  Poznámky pro generátor: Lineární/kvadratické páry.
+  Ukázkové příklady: f(x)=2x+1, g(x)=x^2 → g(f(3))=?, f(x)=x^2-1, g(x)=x-4 → f(g(5))=?
+- Level 9 – Práce s odmocninami
+  Zaměření: Násobení/dělení odmocnin (výsledek -> celé číslo nebo zjednodušený tvar).
+  Poznámky pro generátor: Volte páry, kde je možné racionalizovat.
+  Ukázkové příklady: √2 × √8 = ?, √12 ÷ √3 = ?
+- Level 10 – Základy pravděpodobnosti
+  Zaměření: Kombinace/permutace nebo jednoduché pravděpodobnosti.
+  Poznámky pro generátor: Malé n ≤10, výsledky celé číslo nebo jednoduchý zlomek.
+  Ukázkové příklady: C(5,2) = ?, Pravděpodobnost hodu 6 na kostce = ?
+Logika progrese: Úrovně 1–3 upevňují kvadratické rovnice a posloupnosti; 4–9 rozšiřují na exponenciály/logaritmy/gonio; 10 přidává pravděpodobnost.
 
-Předškolní (mateřská škola, věk ~5 let)
+## 3. ročník SŠ (věk 17–18 let)
+Přehled: Úvod do diferenciálního a integrálního počtu, základy matic a vektorů, pokročilejší algebra.
+- Level 1 – Kombinace exponentů/logaritmů
+  Zaměření: Vyhodnotit smíšené výrazy.
+  Poznámky pro generátor: Výsledek celé číslo nebo jednoduché desetinné.
+  Ukázkové příklady: 2^3 × 5^2 = ?, log10 100 + log10 1000 = ?
+- Level 2 – Zbytek po dělení polynomem
+  Zaměření: Využití věty o zbytku.
+  Poznámky pro generátor: Dosazení lineárního kořene.
+  Ukázkové příklady: Zbytek x^3 - 2x + 1 při x=2 = ?, Zbytek x^2 + 5x + 6 při x=-3 = ?
+- Level 3 – Derivace v bodě
+  Zaměření: Pravidlo pro mocniny, dosazení.
+  Poznámky pro generátor: Polynom stupně ≤3.
+  Ukázkové příklady: d/dx(x^3) v x=2 = ?, d/dx(5x^2 - 3x) v x=1 = ?
+- Level 4 – Směrnice tečny
+  Zaměření: Interpretace derivace.
+  Poznámky pro generátor: Uveďte funkci a x.
+  Ukázkové příklady: Směrnice y = x^2 v x=3 = ?, Okamžitá rychlost y=2x^3 v x=1 = ?
+- Level 5 – Kontrola primitivních funkcí
+  Zaměření: Určité integrály jednoduchých polynomů.
+  Poznámky pro generátor: Intervaly s celým výsledkem.
+  Ukázkové příklady: ∫_0^1 3x^2 dx = ?, ∫_0^2 2x dx = ?
+- Level 6 – Integrál se substitucí „light“
+  Zaměření: Lineární vnitřní funkce.
+  Poznámky pro generátor: Výsledek celé číslo.
+  Ukázkové příklady: ∫_0^1 4x dx = ?, ∫_0^1 6x^2 dx = ?
+- Level 7 – Limity racionálních funkcí
+  Zaměření: Limita v bodě po vykrácení.
+  Poznámky pro generátor: Vyhněte se 0/0 po zjednodušení.
+  Ukázkové příklady: lim_{x→2} (x^2 - 4)/(x - 2) = ?, lim_{x→1} (x^3 - 1)/(x - 1) = ?
+- Level 8 – Determinanty 2×2
+  Zaměření: Rychlý výpočet determinantu.
+  Poznámky pro generátor: Prvky v ±9.
+  Ukázkové příklady: |1 2; 3 4| = ?, |2 -1; 5 0| = ?
+- Level 9 – Vektory (skalární součin)
+  Zaměření: Skalární součin 2D/3D.
+  Poznámky pro generátor: Složky ≤10.
+  Ukázkové příklady: (2,3) · (4,5) = ?, (1, -2, 3) · (0, 5, -1) = ?
+- Level 10 – Smíšená pokročilá výzva
+  Zaměření: Spojit počet, algebru a vektory.
+  Poznámky pro generátor: Dvoukrokový numerický výsledek.
+  Ukázkové příklady: (d/dx x^2 v x=4) + √49 = ?, Determinant |1 1; 1 2| + ∫_0^1 x dx = ?
+Logika progrese: Úrovně 1–4 upevňují algebru/diferenciální počet; 5–7 přidávají integrály a limity; 8–10 lineární algebru a kombinované úlohy.
 
-Level 1: Základy sčítání malých čísel do 5. (Příklady: 2 + 1 = ? (3); 4 + 0 = ? (4))
-Level 2: Základy odčítání v oboru do 5 (bez záporných výsledků). (Příklady: 5 – 1 = ? (4); 3 – 2 = ? (1))
-Level 3: Sčítání v oboru do 10 (jednociferná čísla). (Příklady: 7 + 2 = ? (9); 1 + 6 = ? (7))
-Level 4: Odčítání v oboru do 10. (Příklady: 9 – 3 = ? (6); 10 – 2 = ? (8))
-Level 5: Porovnávání malých čísel – určování většího z dvou. (Příklady: Větší z 3 a 5 = ? (5); Větší číslo: 7 nebo 4? (7))
-Level 6: Sčítání tří velmi malých čísel (výsledek do 10). (Příklad: 1 + 2 + 3 = ? (6))
-Level 7: Doplnění do 10 (jedno sčítání typu „kolik chybí do 10“). (Příklady: 7 + ? = 10 (3); ? + 4 = 10 (6))
-Level 8: Jednoduché dvojaké operace – kombinace sčítání a odčítání malých čísel. (Příklad: 5 + 2 – 1 = ? (6))
-Level 9: Sčítání v oboru do 10 s přechodem přes 10 (výsledek lehce nad 10). (Příklad: 8 + 5 = ? (13))
-Level 10: Odčítání v oboru do 10 s výsledkem 0 nebo 1 (kontrola pochopení rozdílu všechno–nic). (Příklady: 5 – 5 = ? (0); 6 – 5 = ? (1))
+## 4. ročník SŠ (věk 18–19 let)
+Přehled: Příprava na maturitu – upevnění počtu, pokročilá goniometrie, posloupnosti, pravděpodobnost a komplexní čísla.
+- Level 1 – Smíšené opakování
+  Zaměření: Ujistit se o dovednostech z 3. ročníku.
+  Poznámky pro generátor: Kombinujte derivace/integrály s exponenty.
+  Ukázkové příklady: d/dx(x^3) v x=2 + 5 = ?, √144 + log10 100 = ?
+- Level 2 – Číselné trig. identity
+  Zaměření: sin^2θ + cos^2θ = 1 apod.
+  Poznámky pro generátor: Standardní úhly.
+  Ukázkové příklady: Pokud sin 30° = 0,5, spočtěte cos^230° + sin^230° = ?, tan 45° × cos 45° = ?
+- Level 3 – Exponenciální/logaritmické rovnice
+  Zaměření: Najděte x.
+  Poznámky pro generátor: Celá řešení.
+  Ukázkové příklady: 2^x = 32, x = ?, log3(x) = 2, x = ?
+- Level 4 – Optimalizace pomocí derivace
+  Zaměření: Najít stacionární bod.
+  Poznámky pro generátor: Jednoduché kvadratické funkce.
+  Ukázkové příklady: y = -2x^2 + 8x → x vrcholu = ?, Max y = -x^2 + 9 = ?
+- Level 5 – Součty posloupností
+  Zaměření: Součet aritmetické/geometrické řady.
+  Poznámky pro generátor: Malé n pro mentální výpočet.
+  Ukázkové příklady: Součet prvních 10 přirozených čísel = ?, Součet 1 + 2 + 4 + 8 = ?
+- Level 6 – Kombinatorika/pravděpodobnost
+  Zaměření: Binomické počty nebo jednoduché pravděpodobnosti.
+  Poznámky pro generátor: Výsledek jednoduchý zlomek.
+  Ukázkové příklady: Počet výběrů 3 z 6 = ?, Pravděpodobnost červená (3/5) pak modrá (2/4) = ?
+- Level 7 – Komplexní čísla
+  Zaměření: Absolutní hodnota, reálná/imaginární složka.
+  Poznámky pro generátor: Celá čísla ve složkách.
+  Ukázkové příklady: |3 + 4i| = ?, Reálná část (2 + 5i) + (3 - 2i) = ?
+- Level 8 – Inverzní matice 2×2
+  Zaměření: Determinant a prvky inverze.
+  Poznámky pro generátor: Determinant ≠0; specifikujte hledaný prvek.
+  Ukázkové příklady: Pro |1 2; 3 4|, det = ?, Prvek a₁₁ inverze (na 2 desetinná místa) = ?
+- Level 9 – Limity a spojitost
+  Zaměření: Jednoduché limity s konstantním výsledkem.
+  Poznámky pro generátor: Zahrňte limity s e a sin x / x.
+  Ukázkové příklady: lim_{n→∞} (1 + 1/n)^n ≈ ?, lim_{x→0} sin x / x = ?
+- Level 10 – Finální mix
+  Zaměření: Propojit počet, goniometrii, pravděpodobnost.
+  Poznámky pro generátor: Výsledek snadno spočitatelný.
+  Ukázkové příklady: (d/dx x^3 v x=3) + sin 90° = ?, C(5,2) + √(cos^2 0°) = ?
+Logika progrese: Úrovně 1–3 opakují algebra/trig; 4–7 přidávají počet, posloupnosti, komplexní čísla; 8–10 uzavírají maturitní přípravu.
 
-1. třída ZŠ (6–7 let)
+---
 
-Level 1: Sčítání v oboru do 10 (bez přechodu přes desítku, opakování začátku 1. ročníku). (Př: 3 + 5 = ? (8); 1 + 6 = ? (7))
-Level 2: Odčítání v oboru do 10 (bez vzniku záporných čísel). (Př: 9 – 4 = ? (5); 7 – 2 = ? (5))
-Level 3: Sčítání v oboru do 20 (jednociferné + jednociferné, výsledek maximálně 20, zpočátku bez přechodu přes 10). (Př: 8 + 1 = ? (9); 7 + 2 = ? (9))
-Level 4: Odčítání v oboru do 20. (Př: 15 – 5 = ? (10); 18 – 9 = ? (9))
-Level 5: Sčítání do 20 s přechodem přes 10 (obtížnější případy ke konci 1. třídy). (Př: 9 + 8 = ? (17); 6 + 7 = ? (13))
-Level 6: Odčítání do 20 s přechodem (půjčování, např. 13 – 5). (Př: 13 – 5 = ? (8); 16 – 7 = ? (9))
-Level 7: Sčítání tří čísel do 10 (celkový součet do ~20). (Př: 5 + 2 + 1 = ? (8); 7 + 1 + 2 = ? (10))
-Level 8: Doplňování do 20 – chybějící sčítanec nebo menšenec. (Př: ? + 4 = 15 (11); 12 – ? = 7 (5))
-Level 9: Kombinované jednoduché operace (sčítání i odčítání v 1 příkladu). (Př: 10 – 3 + 2 = ? (9); 4 + 5 – 2 = ? (7))
-Level 10: Sčítání a odčítání kulatých desítek (příprava na 2. třídu). (Př: 10 + 20 = ? (30); 30 – 10 = ? (20))
-
-2. třída ZŠ (7–8 let)
-
-Level 1: Sčítání a odčítání v oboru do 20 (rychlé opakování 1. třídy na úvod). (Př: 17 – 5 = ? (12); 9 + 8 = ? (17))
-Level 2: Sčítání a odčítání kulatých desítek do 100. (Př: 30 + 20 = ? (50); 90 – 40 = ? (50))
-Level 3: Sčítání dvojciferného a jednociferného čísla (výsledek do 100, zpočátku bez přechodu přes desítku). (Př: 45 + 4 = ? (49); 62 + 7 = ? (69))
-Level 4: Odčítání dvojciferného a jednociferného čísla (výsledek kladný, zpočátku bez přechodu). (Př: 53 – 1 = ? (52); 68 – 5 = ? (63))
-Level 5: Sčítání dvojciferných čísel do 100 (případy s přechodem přes desítku). (Př: 47 + 8 = ? (55); 76 + 9 = ? (85))
-Level 6: Odčítání dvojciferných čísel (s přechodem, např. 52 – 9). (Př: 52 – 9 = ? (43); 41 – 6 = ? (35))
-Level 7: Malá násobilka – násobení čísly 1–5 (což odpovídá rozsahu probíranému ve 2. třídě)
-doucujte.cz
-. (Př: 2 × 5 = ? (10); 4 × 3 = ? (12))
-Level 8: Dělení v oboru malé násobilky do 5 (jen příklady beze zbytku). (Př: 15 ÷ 3 = ? (5); 16 ÷ 4 = ? (4))
-Level 9: Chybějící činitel nebo dělenec u jednoduchého násobení či dělení. (Př: ? × 4 = 20 (5); 12 ÷ ? = 6 (2))
-Level 10: Kombinace sčítání/odčítání a malé násobilky (dvě operace v jednom příkladu). (Př: 3 × 5 + 2 = ? (17); 18 – 2 × 7 = ? (4))
-
-3. třída ZŠ (8–9 let)
-
-Level 1: Sčítání a odčítání do 100 (procvičení základní látky 2. ročníku). (Př: 34 + 12 = ? (46); 90 – 45 = ? (45))
-Level 2: Sčítání a odčítání dvouciferných čísel s přechodem přes desítku (např. 56 + 27, 83 – 48). (Př: 56 + 27 = ? (83); 83 – 48 = ? (35))
-Level 3: Násobení v oboru do 100 (celá malá násobilka 1–10). (Př: 7 × 8 = ? (56); 9 × 9 = ? (81))
-Level 4: Dělení v oboru do 100 (dělení čísly 1–10 beze zbytku). (Př: 64 ÷ 8 = ? (8); 45 ÷ 9 = ? (5))
-Level 5: Sčítání trojic čísel do 100 (např. součet více menších čísel). (Př: 20 + 5 + 7 = ? (32); 15 + 30 + 5 = ? (50))
-Level 6: Kombinované operace – jednoduché řetězení více sčítání/odčítání. (Př: 10 + 8 – 3 = ? (15); 5 + 6 + 4 = ? (15))
-Level 7: Chybějící člen v násobilce – doplňování neznámé v násobení či dělení (ověření skutečného pochopení násobků). (Př: ? × 7 = 42 (6); 63 ÷ ? = 9 (7))
-Level 8: Násobení dvouciferného jednociferným (např. 7×14 – tento typ lze počítat zpaměti rozkladem 14 = 10+4). (Př: 7 × 14 = ? (98); 3 × 15 = ? (45))
-Level 9: Dělení dvouciferného jednociferným (pouze beze zbytku). (Př: 96 ÷ 4 = ? (24); 84 ÷ 7 = ? (12))
-Level 10: Pokročilejší kombinace: např. násobení a sčítání v jednom výrazu. (Př: 6 × 5 – 8 = ? (22); 4 + 3 × 6 = ? (22))
-
-4. třída ZŠ (9–10 let)
-
-Level 1: Sčítání a odčítání trojciferných čísel (zpočátku bez přechodu přes stovky). (Př: 200 + 150 = ? (350); 500 – 200 = ? (300))
-Level 2: Sčítání a odčítání čísel do 1000 s přechodem (např. 700+380, 900–450). (Př: 700 + 380 = ? (1080); 900 – 450 = ? (450))
-Level 3: Násobení a dělení čísly 10 a 100 (práce s násobky desítek, stovek)
-doucujte.cz
-. (Př: 25 × 10 = ? (250); 360 ÷ 10 = ? (36))
-Level 4: Násobení jednociferným činitelem v mnohociferných číslech (např. 3× 205). (Př: 3 × 205 = ? (615); 4 × 120 = ? (480))
-Level 5: Písemné algoritmy mentálně – násobení dvojciferným činitelem tam, kde to jde z hlavy (např. 20×15, 11×11). (Př: 20 × 15 = ? (300); 11 × 11 = ? (121))
-Level 6: Dělení se zbytkem v oboru malé násobilky
-doucujte.cz
- – v rámci levelu generuj příklady jak beze zbytku, tak se zbytkem, a hráč musí dát pouze celočíselný výsledek dělení. (Př: 7 ÷ 2 = ? (3) – pokud zbytek 1, bere se jen podíl; 13 ÷ 5 = ? (2) – podíl bez zbytku)
-Level 7: Jednotky a převody – jednoduché převody jednotek, které dávají celé číslo. (Př: 100 cm = ? m (1); 3 m = ? cm (300))
-Level 8: Zlomky – základ: jednoduché zlomky a jejich hodnoty. (Př: 1/2 z 20 = ? (10); 1/4 z 8 = ? (2))
-Level 9: Smíšené operace: kombinace sčítání/odčítání s násobením nebo dělením (důraz na správné pořadí operací). (Př: 10 + 2 × 4 = ? (18); 20 – 9 ÷ 3 = ? (17))
-Level 10: Kombinace zlomků a násobení: složitější příklad pro bystré žáky (nad rámec běžného učiva 4. tř.). (Př: 1/2 z 30 + 5 = ? (20); 1/3 z 15 + 2 = ? (7))
-
-5. třída ZŠ (10–11 let)
-
-Level 1: Sčítání a odčítání čtyřciferných čísel (do 10 000). (Př: 5000 + 3000 = ? (8000); 9000 – 4500 = ? (4500))
-Level 2: Sčítání a odčítání čísel do 1 000 000 (i když mentálně se řeší jen jednodušší kombinace – velká čísla vol spíše kulatá)
-doucujte.cz
-. (Př: 200000 + 300000 = ? (500000); 500000 – 100000 = ? (400000))
-Level 3: Násobení a dělení 10, 100, 1000 a jejich násobky (posun desetinné čárky). (Př: 250 × 100 = ? (25000); 3600 ÷ 100 = ? (36))
-Level 4: Násobení dvouciferných čísel jednociferným (zpaměti jednodušší případy nebo využití distributivity). (Př: 7 × 15 = ? (105); 8 × 12 = ? (96))
-Level 5: Dělení dvouciferných čísel jednociferným (většinou beze zbytku). (Př: 96 ÷ 8 = ? (12); 85 ÷ 5 = ? (17))
-Level 6: Desetinná čísla – sčítání/odčítání (jednoduché desetinné hodnoty, max. 1 desetinné místo)
-doucujte.cz
-. (Př: 5,5 + 2,0 = ? (7,5); 3,0 – 1,5 = ? (1,5))
-Level 7: Desetinná čísla – násobení a dělení celým číslem (jednoduché případy). (Př: 2,5 × 2 = ? (5,0); 6,0 ÷ 3 = ? (2,0))
-Level 8: Zlomky – porozumění: určení jednoduché části celku, která vyjde jako celé číslo. (Př: 1/5 z 25 = ? (5); 3/4 z 20 = ? (15))
-Level 9: Procenta – základní procentové hodnoty (celá procenta, které dají celé číslo výsledku). (Př: 50 % z 60 = ? (30); 10 % z 90 = ? (9))
-Level 10: Kombinace desetinných čísel, zlomků a procent (výzva navíc, integrace látky). (Př: 0,5 + 1/2 = ? (1,0); 25 % z 8 + 2 = ? (4))
-
-6. třída ZŠ (11–12 let)
-
-Level 1: Sčítání a odčítání desetinných čísel (více desetinných míst, výsledky do tisíců)
-zs-msstrazek.cz
-. (Př: 1,25 + 3,5 = ? (4,75); 5,0 – 2,75 = ? (2,25))
-Level 2: Násobení a dělení desetinných čísel celým číslem. (Př: 2,5 × 4 = ? (10,0); 6,4 ÷ 2 = ? (3,2))
-Level 3: Pravidla dělitelnosti – jednoduché ověření dělitelnosti výsledkem. (Př: 84 ÷ 6 = ? (14) – kontrola dělitelnosti 84 šesti; 75 ÷ 5 = ? (15) – dělitelnost pěti)
-Level 4: Výpočet zbytku při dělení (v jednoduchých případech). (Př: 17 ÷ 5, zbytek = ? (2); 10 ÷ 4, zbytek = ? (2))
-Level 5: Násobení vícemístných čísel jednociferným (např. 6× 247, lze rozložit 6×200 + 6×47). (Př: 6 × 200 = ? (1200); 6 × 47 = ? (282) → dohromady; ale zde zadáváme každý díl zvlášť)
-Level 6: Násobení více činitelů (řetězení, např. součin tří malých čísel). (Př: 2 × 3 × 4 = ? (24); 2 × 2 × 2 × 2 = ? (16))
-Level 7: Celá čísla – zavedení záporných hodnot (jednoduché operace). (Př: 0 – 5 = ? (–5); –3 + 8 = ? (5))
-Level 8: Celá čísla – násobení a dělení se zápornými (znak výsledku). (Př: –4 × 3 = ? (–12); –15 ÷ 3 = ? (–5))
-Level 9: Kombinace kladných a záporných (např. součet tří čísel různých znamének). (Př: –2 + 5 – 4 = ? (–1); 3 + (–7) + 2 = ? (–2))
-Level 10: Alternativní výzva – mocniny: výpočet objemu krychle malého čísla (třetí mocnina). (Př: 3 × 3 × 3 = ? (27); 2³ = ? (8))
-
-7. třída ZŠ (12–13 let)
-
-Level 1: Operace v oboru celých čísel – sčítání a odčítání se zápornými čísly (běžné případy)
-zs-msstrazek.cz
-. (Př: 5 – 8 = ? (–3); –4 + 7 = ? (3))
-Level 2: Násobení a dělení celých čísel (záporná × kladná, záporná ÷ kladná). (Př: –3 × 4 = ? (–12); –10 ÷ 2 = ? (–5))
-Level 3: Procenta – základní výpočty (10 %, 20 %, 50 % z celku). (Př: 10 % z 50 = ? (5); 50 % z 30 = ? (15))
-Level 4: Zlomky – výpočet části celku, případně převod jednoduchého poměru na zlomek
-zs-msstrazek.cz
-. (Př: 1/3 z 33 = ? (11); 3/4 z 16 = ? (12))
-Level 5: Kombinace zlomku a celého čísla (sčítání, odčítání) – výsledkem celé číslo nebo jednoduchý zlomek. (Př: 5 + 1/2 = ? (5½); 4 – 3/2 = ? (2½)) – pozn.: ve hře lze přijmout desetinný ekvivalent 5,5 a 2,5*
-Level 6: Procenta – složitější hodnoty (25 %, 5 %, 15 % ze základu). (Př: 25 % z 80 = ? (20); 5 % z 200 = ? (10))
-Level 7: Poměr a úměra – jednoduchá úměrnost, hledání neznámé hodnoty. (Př: 2 : 3 = 4 : ? (6); 3 : 5 = 9 : ? (15))
-Level 8: Negativní × negativní (součin dvou záporných čísel). (Př: –4 × –3 = ? (12); –2 × –7 = ? (14))
-Level 9: Jednoduché lineární rovnice (řešení „z hlavy“). (Př: x – 5 = 2, x = ? (7); 2x + 1 = 9, x = ? (4))
-Level 10: Alternativní výzva – kombinace různých formátů čísel (zlomky, desetinná čísla, procenta) v jednom výrazu. (Př: 0,5 + 1/2 + 10 % z 10 = ? (1,5); 1/4 z 8 + 0,5 = ? (2,5))
-
-8. třída ZŠ (13–14 let)
-
-Level 1: Procenta – běžné výpočty (např. 120 % nebo 75 % z čísla). (Př: 120 % z 50 = ? (60); 75 % z 40 = ? (30))
-Level 2: Druhá mocnina čísla (nácvik na čtverce čísel do 20)
-zs-msstrazek.cz
-. (Př: 7² = ? (49); 15² = ? (225))
-Level 3: Druhá odmocnina – odhady a známé hodnoty (dokonalé čtverce). (Př: √49 = ? (7); √144 = ? (12))
-Level 4: Kombinace mocniny a sčítání/odčítání. (Př: 5² – 3 = ? (22); √36 + 5 = ? (11))
-Level 5: Jednoduché algebraické výrazy – dosazení hodnot a vyčíslení. (Př: Pro x=3: 2x + 1 = ? (7); Pro n=4: n² – n = ? (12))
-Level 6: Lineární rovnice – řešení (včetně záporných výsledků). (Př: 3x – 5 = 7, x = ? (4); –2x = 8, x = ? (–4))
-Level 7: Úměra (trojčlenka) – složitější poměry. (Př: 5 : 8 = 15 : ? (24); 3 : 4 = ? : 20 (15))
-Level 8: Smíšené výrazy se dvěma operacemi – důraz na pořadí (např. násobení a sčítání). (Př: 2^3 + 4 = ? (12); 8 + 6 ÷ 2 = ? (11))
-Level 9: Kombinace mocnin a odmocnin v jednom výrazu. (Př: √81 + 4² = ? (89); √25 + √9 = ? (8))
-Level 10: Alternativní výzva – komplexnější výpočty s racionálními čísly. (Př: (1/2 z 12) + (10 % z 50) = ? (11); 3/4 z 16 + 2 = ? (14))
-
-9. třída ZŠ (14–15 let) – příprava na přijímačky SŠ
-
-Level 1: Procenta – výpočty „zpaměti“ i zpětné (urči celek nebo procentovou část). (Př: 15 % z 120 = ? (18); 30 je ? % z 60 (50))
-Level 2: Zlomky – sčítání/odčítání se stejným jmenovatelem, násobení zlomku číslem. (Př: 1/2 + 1/4 = ? (3/4); 2/3 z 90 = ? (60))
-Level 3: Druhé mocniny a odmocniny čísel do 20 (opakování 8. tř). (Př: 18² = ? (324); √361 = ? (19))
-Level 4: Jednoduché algebraické výrazy – dosazení a výpočet (mohou být i dvouproměnné). (Př: Pro x=2, y=3: x² + y² = ? (13); Pro a=3: 2a² – a = ? (15))
-Level 5: Lineární rovnice a nerovnice – rychlé řešení. (Př: 2x + 5 = 11, x = ? (3); x + 4 < 7, x < ? (3))
-Level 6: Geometrické počty – Pythagorova trojice, obvod, obsah (jednoduché případy). (Př: 3² + 4² = ?² (5²); obvod čtverce 5×5 = ? (20))
-Level 7: Kombinatorika/úvaha – jednoduchý výpočet bez kalkulačky. (Př: 5! = ? (120); Počet dnů v 8 týdnech = ? (56))
-Level 8: Směsi a poměry – zjednodušené výpočty (např. průměry, směšovací poměr v malých číslech). (Př: průměr(4, 6) = ? (5); poměr 2:3 z 50 ks = ? ks (20 a 30))
-Level 9: Funkce – dosazení do jednoduchých funkcí (lineární, kvadratické) a výpočet. (Př: f(x)=2x–1, pro x=5: f(x)=? (9); g(x)=x², pro x=–4: g(x)=? (16))
-Level 10: Alternativní výzva – komplexní příklad integrující více oblastí. (Př: (1/2 z 20) + (25 % z 8) + √16 = ? (10 + 2 + 4 = 16); (–3)² + 15 % z 40 = ? (9 + 6 = 15))
-
-1. ročník SŠ (15–16 let)
-
-Level 1: Rychlé sčítání a odčítání vícečíselných hodnot (revize ZŠ). (Př: 120 + 450 = ? (570); 1000 – 375 = ? (625))
-Level 2: Násobení a dělení dvoucifernými čísly (jednodušší případy, využití známých násobilkových spojů). (Př: 14 × 9 = ? (126); 1000 ÷ 25 = ? (40))
-Level 3: Pokročilá malá násobilka – násobení větších jednociferných a dvouciferných (např. 13×7, 15×15). (Př: 13 × 7 = ? (91); 15 × 15 = ? (225))
-Level 4: Mocniny a odmocniny – obecné použití (i nad rámec 20², jednoduché vyšší mocniny). (Př: 2^10 = ? (1024); √256 = ? (16))
-Level 5: Dosazování do vzorců – výpočet hodnot jednoduchých výrazů s více proměnnými. (Př: Pro x=2, y=5: 3x + y = ? (11); Pro a=4: a^2 – 2a = ? (8))
-Level 6: Základy finanční matematiky – výpočty s % navýšením či snížením (bez složeného úročení). (Př: cena 200 Kč + 21 % DPH = ? (242); sleva 15 % ze 1000 Kč = ? (850))
-Level 7: Fyzikální aplikace – převody jednotek s desetinnými čísly. (Př: 0,5 kg = ? g (500); 36 km/h = ? m/s (10) – přepočet: 36 000 m za 3600 s)
-Level 8: Pokročilé zlomky – kombinace operací se zlomky (sčítání, násobení; výsledky v základním tvaru). (Př: 1/2 + 2/3 = ? (7/6); 4/3 × 9 = ? (12))
-Level 9: Goniometrické hodnoty – jednoduché známé úhly. (Př: sin 30° = ? (0,5); cos 60° = ? (0,5))
-Level 10: Alternativní výzva – komplexní úloha kombinující více kroků (např. dosazení do vzorce a výpočet procent). (Př: y = 2x+1, pro x=3: y + 10 % z 50 = ? (7 + 5 = 12); √(3^2 + 4^2) + 1 = ? (5 + 1 = 6))
-
-2. ročník SŠ (16–17 let)
-
-Level 1: Sčítání, odčítání, násobení a dělení běžných racionálních čísel (včetně smíšených čísel, desetinných, procent) – rutinní procvičení. (Př: 5,75 – 2,5 = ? (3,25); 120 % ze 30 = ? (36))
-Level 2: Mocniny – vyšší exponenty a jejich použití (čtverce nad 20, krychle malých čísel). (Př: 25² = ? (625); 4^3 = ? (64))
-Level 3: Odmocniny – odmocniny větších čísel, zjednodušování výrazů s odmocninami. (Př: √400 = ? (20); √(50 000/2) = ? (√25000 = 158,113… – tento spíše ne, raději jednodušší))
-Level 4: Logické odhady – např. odhad výsledku nebo kontrola číslic (alternativní cvičení pro mentální postřeh). (Př: přibližně: 51 × 19 ≈ ? (≈970); odhad: 203 ÷ 2 ≈ ? (≈100))
-Level 5: Algebra – hodnoty kvadratických výrazů, pokud jsou faktorizovatelné (bez řešení rovnic, jen dosazení). (Př: Pro x=3: x² – 2x – 3 = ? (–3); Pro t=2: (t–1)(t+2) = ? (3))
-Level 6: Algebra – řešení jednoduchých kvadratických rovnic se známými kořeny (např. vzorec a²=b). (Př: x² = 16, x = ? (±4); x² – 9 = 0, x = ? (±3))
-Level 7: Kombinatorika – výpočty faktoriálů, kombinací pro malá čísla. (Př: 4! = ? (24); C(5,2) = ? (10))
-Level 8: Pokročilá procenta – složené úrokování na 1 krok (např. jedno navýšení o X %). (Př: 1000 Kč po navýšení o 10 % = ? (1100); po 10% snížení z 200 = ? (180))
-Level 9: Goniometrie – hodnoty goniometrických funkcí běžných úhlů v radiánech. (Př: sin π/6 = ? (0,5); cos π/3 = ? (0,5))
-Level 10: Alternativní výzva – komplexní úloha s více prvky. (Př: (1/2 + 0,5) × 2^3 = ? (1 × 8 = 8); 3! + 2³ = ? (6 + 8 = 14))
-
-3. ročník SŠ (17–18 let)
-
-Level 1: Rychlé kombinované operace s celými i desetinnými čísly (směs +, –, ×, ÷ v jednom výrazu). (Př: 12 + 7 × 2 – 5 = ? (21); 100 – 40 ÷ 5 = ? (92))
-Level 2: Mocniny a odmocniny – i ne zcela triviální hodnoty (např. odmocniny nečtvercových čísel s jednoduchým výsledkem). (Př: ³√27 = ? (3); √0,04 = ? (0,2))
-Level 3: Logaritmy – jednoduché logaritmické rovnice, kde výsledek je celé číslo. (Př: log₁₀(1000) = ? (3); log₂(16) = ? (4))
-Level 4: Algebra – hodnoty složitějších výrazů při dosazení (např. s potenciálně nulovým jmenovatelem – kontrola definičního oboru). (Př: Pro x=2: (x² – 4)/(x – 2) = ? (4–? – pozor, nedefinováno, tento příklad by v testu vyvolal chybu))
-Level 5: Řešení rovnic – kvadratické rovnice řešitelné snadno faktorizací. (Př: x² – 5x + 6 = 0, x = ? (2 nebo 3); x² = 5x, x = ? (0 nebo 5))
-Level 6: Řešení soustav dvou lineárních rovnic o dvou neznámých (s jednoduchými kořeny). (Př: x+y=7, x-y=3, x = ? (5); 2a+b=5, a-b=1; b = ? (3))
-Level 7: Funkce – složení dvou funkcí nebo inverzní funkce na konkrétní hodnotě. (Př: f(x)=2x, g(x)=x+1, g(f(3)) = ? (7); f(x)=x³, f⁻¹(8) = ? (2))
-Level 8: Goniometrie – hodnoty goniometrických funkcí pro specifické úhly, případně jednoduché trigonometrické rovnice. (Př: tan 45° = ? (1); sin x = 1, x = ? (90°))
-Level 9: Matice a determinanty – determinant 2×2 matice zpaměti. (Př: | 1 2; 3 4 | = ? (–2); | 2 0; 0 5 | = ? (10))
-Level 10: Alternativní výzva – komplexní úloha zahrnující více oblastí vyšší matematiky (základní prvky). (Př: (2 + 3i) + (4 – 2i) = ? (6 + 1i); lim(x→0) (sin x / x) = ? (1))
-
-4. ročník SŠ (18–19 let) – příprava na maturitu
-
-Level 1: Opakování – pestrá směs základních početních operací s důrazem na rychlost a přesnost. (Př: 150 – 4 × 25 = ? (50); 0,75 + 3/4 = ? (1,5))
-Level 2: Pokročilé mocniny – výpočty typu 〖(1+1/n)〗^n pro velké n (přibližně e), případně jednoduché limity. (Př: (1 + 1/100)¹⁰⁰ ≈ ? (~2,704); lim(n→∞) (1+1/n)^n ≈ ? (~2,718))
-Level 3: Pokročilé odmocniny a logaritmy – kombinace (např. logaritmus odmocniny, řešitelné zjednodušením). (Př: log₁₀(√100) = ? (1); ln(e³) = ? (3))
-Level 4: Kombinatorika a pravděpodobnost – mentální odhad nebo výpočet jednoduché pravděpodobnosti. (Př: Při hodu kostkou šance na 6 = ? (1/6); C(6,3) = ? (20))
-Level 5: Derivace a integrály – velmi jednoduché případy z hlavy (derivace mocninné funkce, určitý integrál konstanty). (Př: (x²)’ = ? (2x); ∫₀¹ 2 dx = ? (2))
-Level 6: Řešení exponenciálních a logaritmických rovnic – mentálně, pokud mají „kulatá“ řešení. (Př: 2^x = 16, x = ? (4); log₂(x) = 3, x = ? (8))
-Level 7: Goniometrické rovnice – jednoduché případy v rámci 0–360°. (Př: sin x = 0, x = ? (0° nebo 180°); cos x = 1, x = ? (0°))
-Level 8: Počítání s komplexními čísly – součty, součiny jednoduchých komplexních čísel. (Př: (1 + i) + (2 – 2i) = ? (3 – i); (1 + i)·(1 – i) = ? (2))
-Level 9: Matice – výpočty s 2×2 maticemi (násobení matic, determinant), případně invertování jednoduchých matic. (Př: | 3 0; 0 3 | = ? (9); | 1 1; 1 1 | = ? (0))
-Level 10: Alternativní výzva (maturitní úroveň) – komplexní úloha spojující více pokročilých konceptů. (Př: e^(ln(5)) + √(sin² 45°) = ? (5 + 0,707… – přesně 5,707…); d/dx(x³) při x=2 + 4! = ? (12 + 24 = 36))
-
-(Poznámka: U pokročilejších SŠ úloh už některé výstupy nejsou celá čísla – ve hře však můžeme akceptovat přibližné desetinné odpovědi nebo zjednodušené tvary podle potřeby. Nicméně, hlavním cílem implementace jsou úrovně ZŠ a odpovídající maturitní minimum, takže extrémní SŠ příklady lze případně vypustit nebo zjednodušit.)
-
-Zdrojová podpora: Při sestavování úloh jsme vycházeli z rámcových požadavků MŠMT pro matematiku (RVP ZV a G, katalogy požadavků k přijímacím zkouškám a maturitě) a z typických příkladů v učebnicích daných ročníků. Pro ověření jsme použili např. přehledy požadovaných výstupů pro 1.–5. ročník
-doucujte.cz
-doucujte.cz
- a 6.–9. ročník ZŠ
-zs-msstrazek.cz
-zs-msstrazek.cz
-. Tyto zdroje potvrzují, že námi zvolené typy příkladů odpovídají úrovni daného ročníku (a případně lehce rozšiřují obtížnost v rámci levelů 7–10, aby hra byla dostatečně náročná i pro šikovné žáky).
+Poznámky k použití: První dvě až tři úrovně každého ročníku záměrně zhušťují dovednosti z nižších ročníků (aby starší žáci prokázali základy) a následné úrovně rozvíjejí učivo ročníku až po náročné výzvy. Při implementaci mapujte tyto definice na konfiguraci generátorů v `questions.js` tak, aby výstupy zůstaly číselné a čas pro odpověď byl přibližně do 3 sekund.

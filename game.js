@@ -23,7 +23,7 @@
  */
 
 const VERSION_INFO = (() => {
-    const declared = '3.3.5';
+    const declared = '3.3.21';
     let fromQuery = null;
 
     try {
@@ -53,10 +53,74 @@ const VERSION_INFO = (() => {
 
 const GAME_VERSION = VERSION_INFO.effective;
 
+// Ladicí přepínač umožňující zpomalit smyčku hry pro testování animací
+let debugSlow = false;
+const DEBUG_SLOW_FPS = 10;
+let lastDebugFrameTime = 0;
+
+// Ladicí přepínač pro zobrazení všech bossů najednou
+let debugBoss = false;
+
+// Ladicí přepínač pro zobrazení FPS v pravém horním rohu
+let debugFPS = false;
+let fpsFrameTimes = [];
+let currentFPS = 0;
+
+if(typeof window !== 'undefined') {
+    if(Object.prototype.hasOwnProperty.call(window, 'debugSlow')) {
+        debugSlow = Boolean(window.debugSlow);
+    }
+
+    Object.defineProperty(window, 'debugSlow', {
+        configurable: true,
+        get() {
+            return debugSlow;
+        },
+        set(value) {
+            debugSlow = Boolean(value);
+            lastDebugFrameTime = 0;
+        }
+    });
+
+    window.debugSlow = debugSlow;
+
+    if(Object.prototype.hasOwnProperty.call(window, 'debugBoss')) {
+        debugBoss = Boolean(window.debugBoss);
+    }
+
+    Object.defineProperty(window, 'debugBoss', {
+        configurable: true,
+        get() {
+            return debugBoss;
+        },
+        set(value) {
+            debugBoss = Boolean(value);
+        }
+    });
+
+    window.debugBoss = debugBoss;
+
+    if(Object.prototype.hasOwnProperty.call(window, 'debugFPS')) {
+        debugFPS = Boolean(window.debugFPS);
+    }
+
+    Object.defineProperty(window, 'debugFPS', {
+        configurable: true,
+        get() {
+            return debugFPS;
+        },
+        set(value) {
+            debugFPS = Boolean(value);
+        }
+    });
+
+    window.debugFPS = debugFPS;
+}
+
 const WITCH_HEAD_X = 90;
 const WITCH_HEAD_Y = 140;
-const WITCH_SHIELD_OFFSET_X = 30;
-const WITCH_SHIELD_OFFSET_Y = 35;
+const WITCH_SHIELD_OFFSET_X = 35;
+const WITCH_SHIELD_OFFSET_Y = 40;
 // Chest-level aim point for fireballs and shield origin: (100, 150)
 const WITCH_SHIELD_CENTER_X = WITCH_HEAD_X + WITCH_SHIELD_OFFSET_X;
 const WITCH_SHIELD_CENTER_Y = WITCH_HEAD_Y + WITCH_SHIELD_OFFSET_Y;
@@ -111,6 +175,7 @@ const game = {
     shootingStars: [],
     seagulls: [],
     cloudLayers: [],
+    lastCloudSpawnTime: 0,
     fireflies: [],
     pollenMotes: [],
     timeState: {
@@ -127,7 +192,10 @@ const game = {
     fireballs: [],
     nextFireballTime: null,
     witchShield: null,
-    monsterVisualY: 180
+    monsterVisualY: 180,
+    selectedGrade: null,
+    isPausedForModal: true,
+    monsterHitFlash: 0
 };
 
 // Initialize stars
@@ -168,6 +236,114 @@ function initSeagulls() {
             amplitude: 5 + Math.random() * 15
         });
     }
+}
+
+const GRADE_STORAGE_KEY = 'mathwizard.grade';
+const GRADE_SLIDER_MIN = 0;
+const GRADE_SLIDER_MAX = 13;
+
+function getGradeLabel(value) {
+    const numeric = typeof value === 'number' ? value : parseInt(value, 10);
+
+    if(Number.isNaN(numeric)) {
+        return 'Předškolní';
+    }
+
+    const normalized = Math.min(Math.max(numeric, GRADE_SLIDER_MIN), GRADE_SLIDER_MAX);
+
+    if(normalized <= 0) {
+        return 'Předškolní';
+    }
+
+    if(normalized <= 9) {
+        return `${normalized}. ročník ZŠ`;
+    }
+
+    const highSchoolYear = normalized - 9;
+    return `${highSchoolYear}. ročník SŠ`;
+}
+
+function hexToRgb(hex) {
+    const normalized = hex.replace('#', '');
+    const bigint = parseInt(normalized, 16);
+    return {
+        r: (bigint >> 16) & 255,
+        g: (bigint >> 8) & 255,
+        b: bigint & 255
+    };
+}
+
+function rgbToHex({ r, g, b }) {
+    const toComponent = value => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
+    return `#${toComponent(r)}${toComponent(g)}${toComponent(b)}`;
+}
+
+function mixHexColors(a, b, t) {
+    const colorA = hexToRgb(a);
+    const colorB = hexToRgb(b);
+    const mixComponent = key => colorA[key] + (colorB[key] - colorA[key]) * t;
+    return rgbToHex({ r: mixComponent('r'), g: mixComponent('g'), b: mixComponent('b') });
+}
+
+function lightenHexColor(hex, amount) {
+    return mixHexColors(hex, '#ffffff', amount);
+}
+
+function getModalBackgroundColor(value) {
+    const normalized = Math.min(Math.max(value / (GRADE_SLIDER_MAX || 1), 0), 1);
+    const blue = '#1a3f8a';
+    const purple = '#5a2c91';
+    const red = '#9c1f24';
+
+    if(normalized <= 0.5) {
+        const t = normalized / 0.5;
+        return mixHexColors(blue, purple, t);
+    }
+
+    const t = (normalized - 0.5) / 0.5;
+    return mixHexColors(purple, red, t);
+}
+
+function computeGradeGradientColors(value) {
+    const baseColor = getModalBackgroundColor(value);
+    const lightAccent = lightenHexColor(baseColor, 0.35);
+    return { baseColor, lightAccent };
+}
+
+function updateAgeModalBackground(value) {
+    if(!ageModal) {
+        return;
+    }
+
+    const colors = computeGradeGradientColors(value);
+    const { baseColor, lightAccent } = colors;
+    ageModal.style.background = `linear-gradient(135deg, ${lightAccent} 0%, ${baseColor} 100%)`;
+    updateQuestionPanelBackground(colors);
+    updateGameOverBackground(colors);
+}
+
+function updateQuestionPanelBackground(colors) {
+    const questionPanel = document.getElementById('questionPanel');
+    if(!questionPanel || !colors) {
+        return;
+    }
+
+    const { baseColor, lightAccent } = colors;
+    questionPanel.style.background = `linear-gradient(135deg, ${lightAccent} 0%, ${baseColor} 100%)`;
+    questionPanel.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.35)';
+    questionPanel.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+}
+
+function updateGameOverBackground(colors) {
+    const finalDialog = document.getElementById('gameOver');
+    if(!finalDialog || !colors) {
+        return;
+    }
+
+    const { baseColor, lightAccent } = colors;
+    finalDialog.style.background = `linear-gradient(135deg, ${lightAccent} 0%, ${baseColor} 100%)`;
+    finalDialog.style.boxShadow = '0 18px 36px rgba(0, 0, 0, 0.45)';
+    finalDialog.style.border = '1px solid rgba(255, 255, 255, 0.18)';
 }
 
 function randInt(min, max) {
@@ -453,37 +629,40 @@ function initCloudLayers(options = {}) {
 
         const blobs = [];
         if(prevLayer && Array.isArray(prevLayer.blobs)) {
-            for(let i = 0; i < config.count; i++) {
-                const prevBlob = prevLayer.blobs[i];
-                if(prevBlob) {
-                    blobs.push({
-                        x: prevBlob.x,
-                        y: Math.max(newRange[0], Math.min(newRange[1], prevBlob.y)),
-                        width: prevBlob.width,
-                        height: prevBlob.height,
-                        wobble: prevBlob.wobble,
-                        offset: prevBlob.offset
-                    });
-                } else {
-                    blobs.push({
-                        x: Math.random() * canvas.width,
-                        y: newRange[0] + Math.random() * newSpan,
-                        width: 40 + Math.random() * 60,
-                        height: 14 + Math.random() * 8,
-                        wobble: Math.random() * Math.PI * 2,
-                        offset: Math.random() * 30
-                    });
-                }
-            }
+            // Zachovat všechny existující mraky
+            prevLayer.blobs.forEach(prevBlob => {
+                const bw = prevBlob.baseWidth || prevBlob.width;
+                const bh = prevBlob.baseHeight || prevBlob.height;
+                blobs.push({
+                    x: prevBlob.x,
+                    y: Math.max(newRange[0], Math.min(newRange[1], prevBlob.y)),
+                    width: bw,
+                    height: bh,
+                    wobble: prevBlob.wobble,
+                    offset: prevBlob.offset,
+                    verticalSpeed: prevBlob.verticalSpeed || (Math.random() - 0.5) * 0.05,
+                    sizeSpeed: prevBlob.sizeSpeed || (Math.random() - 0.5) * 0.02,
+                    baseWidth: bw,
+                    baseHeight: bh,
+                    sizePhase: prevBlob.sizePhase || Math.random() * Math.PI * 2
+                });
+            });
         } else {
             for(let i = 0; i < config.count; i++) {
+                const w = 40 + Math.random() * 60;
+                const h = 14 + Math.random() * 8;
                 blobs.push({
-                    x: Math.random() * canvas.width,
+                    x: (canvas.width / config.count) * i + Math.random() * (canvas.width / config.count) - 60,
                     y: newRange[0] + Math.random() * newSpan,
-                    width: 40 + Math.random() * 60,
-                    height: 14 + Math.random() * 8,
+                    width: w,
+                    height: h,
                     wobble: Math.random() * Math.PI * 2,
-                    offset: Math.random() * 30
+                    offset: Math.random() * 30,
+                    verticalSpeed: (Math.random() - 0.5) * 0.05,
+                    sizeSpeed: (Math.random() - 0.5) * 0.02,
+                    baseWidth: w,
+                    baseHeight: h,
+                    sizePhase: Math.random() * Math.PI * 2
                 });
             }
         }
@@ -497,6 +676,41 @@ function initCloudLayers(options = {}) {
             blobs
         };
     });
+}
+
+function spawnNewClouds() {
+    const now = Date.now();
+    const timeSinceLastSpawn = now - game.lastCloudSpawnTime;
+
+    // Spawn nový mrak náhodně každých 3-8 sekund
+    if(timeSinceLastSpawn > 3000 + Math.random() * 5000) {
+        game.lastCloudSpawnTime = now;
+
+        // Náhodně vybrat vrstvu pro spawn
+        if(game.cloudLayers.length > 0) {
+            const layerIndex = Math.floor(Math.random() * game.cloudLayers.length);
+            const layer = game.cloudLayers[layerIndex];
+            const yRange = layer.yRange;
+            const ySpan = yRange[1] - yRange[0];
+
+            const w = 40 + Math.random() * 60;
+            const h = 14 + Math.random() * 8;
+
+            layer.blobs.push({
+                x: -100 - Math.random() * 50,
+                y: yRange[0] + Math.random() * ySpan,
+                width: w,
+                height: h,
+                wobble: Math.random() * Math.PI * 2,
+                offset: Math.random() * 30,
+                verticalSpeed: (Math.random() - 0.5) * 0.05,
+                sizeSpeed: (Math.random() - 0.5) * 0.02,
+                baseWidth: w,
+                baseHeight: h,
+                sizePhase: Math.random() * Math.PI * 2
+            });
+        }
+    }
 }
 
 function initAmbientParticles(options = {}) {
@@ -596,22 +810,42 @@ function drawCloudBlob(style, primary, secondary, x, y, width, height, wobble, v
 
 function drawCloudLayersOnCanvas(palette) {
     const style = palette.cloudStyle || 'puffy';
+
+    // Spawn nové mraky
+    spawnNewClouds();
+
     game.cloudLayers.forEach(layer => {
         layer.primaryColor = palette.cloudLight || layer.primaryColor;
         layer.secondaryColor = palette.cloudDark || layer.secondaryColor;
+
+        // Update a vykreslení mraků
         layer.blobs.forEach(blob => {
-            if(!game.isGameOver) {
-                blob.x += layer.speed;
-                blob.wobble += 0.01 * layer.variance;
+            // Horizontální pohyb
+            blob.x += layer.speed;
+            blob.wobble += 0.01 * layer.variance;
+
+            // Vertikální pohyb
+            blob.y += blob.verticalSpeed;
+
+            // Kontrola, zda mrak nezešel mimo yRange
+            const [minY, maxY] = layer.yRange;
+            if(blob.y < minY || blob.y > maxY) {
+                blob.verticalSpeed *= -1; // Otočit směr
+                blob.y = Math.max(minY, Math.min(maxY, blob.y));
             }
 
-            if(blob.x > canvas.width + 80) {
-                blob.x = -60 - Math.random() * 40;
-            }
+            // Změna velikosti
+            blob.sizePhase += blob.sizeSpeed;
+            const sizeModifier = 1 + Math.sin(blob.sizePhase) * 0.15;
+            blob.width = blob.baseWidth * sizeModifier;
+            blob.height = blob.baseHeight * sizeModifier;
 
             const wobbleY = Math.sin(blob.wobble) * 6 * layer.variance;
             drawCloudBlob(style, layer.primaryColor, layer.secondaryColor, blob.x, blob.y + wobbleY, blob.width, blob.height, blob.wobble, layer.variance);
         });
+
+        // Odstranit mraky, které opustily obrazovku vpravo
+        layer.blobs = layer.blobs.filter(blob => blob.x <= canvas.width + 80);
     });
     ctx.globalAlpha = 1;
 }
@@ -1673,7 +1907,12 @@ function maybeLaunchMonsterFireball(originX, originY) {
     }
 
     if(now >= game.nextFireballTime) {
-        spawnMonsterFireball(originX, originY);
+        const shotCount = 1 + Math.floor(Math.random() * 3);
+        for(let i = 0; i < shotCount; i++) {
+            setTimeout(() => {
+                spawnMonsterFireball(originX, originY);
+            }, i * 100);
+        }
         scheduleNextFireball(now);
     }
 }
@@ -1683,32 +1922,56 @@ function drawFireball(fireball) {
     ctx.globalCompositeOperation = 'lighter';
 
     if(fireball.trail.length > 1) {
-        const latest = fireball.trail[0];
-        const oldest = fireball.trail[fireball.trail.length - 1];
-        ctx.beginPath();
-        ctx.moveTo(latest.x, latest.y);
-        for(let i = 1; i < fireball.trail.length; i++) {
-            const segment = fireball.trail[i];
-            ctx.lineTo(segment.x, segment.y);
-        }
-        const gradient = ctx.createLinearGradient(latest.x, latest.y, oldest.x, oldest.y);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-        gradient.addColorStop(0.35, fireball.palette.core);
-        gradient.addColorStop(1, fireball.palette.trail);
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = fireball.size * 1.6;
+        const segmentCount = fireball.trail.length - 1;
+        const headWidth = fireball.size * 1.8;
+        const tailWidth = 1;
         ctx.lineCap = 'round';
-        ctx.globalAlpha = 0.55;
-        ctx.stroke();
+        const widthRatioBase = segmentCount > 1 ? segmentCount - 1 : 1;
+
+        for(let i = 0; i < segmentCount; i++) {
+            const start = fireball.trail[i];
+            const end = fireball.trail[i + 1];
+            const ratio = segmentCount > 1 ? i / widthRatioBase : 1;
+            const width = headWidth - (headWidth - tailWidth) * ratio;
+            const alpha = clamp01(0.6 - ratio * 0.35);
+
+            if(alpha <= 0) {
+                continue;
+            }
+
+            const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+            gradient.addColorStop(0.4, fireball.palette.core);
+            gradient.addColorStop(1, fireball.palette.trail);
+
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = Math.max(tailWidth, width);
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+        }
     }
 
-    for(const segment of fireball.trail) {
+    const trailLength = fireball.trail.length;
+    const tailSteps = Math.max(1, trailLength - 1);
+
+    for(let i = 0; i < trailLength; i++) {
+        const segment = fireball.trail[i];
         if(segment.alpha <= 0) {
             continue;
         }
 
-        ctx.globalAlpha = segment.alpha * 0.6;
-        const glowRadius = segment.size * 1.9;
+        const ratio = i / tailSteps;
+        const alpha = clamp01(segment.alpha * (0.6 - ratio * 0.2));
+        if(alpha <= 0) {
+            continue;
+        }
+
+        ctx.globalAlpha = alpha;
+        const baseRadius = segment.size * 1.9;
+        const glowRadius = Math.max(1, baseRadius - (baseRadius - 1) * ratio);
         const gradient = ctx.createRadialGradient(segment.x, segment.y, 0, segment.x, segment.y, glowRadius);
         gradient.addColorStop(0, fireball.palette.core);
         gradient.addColorStop(0.6, fireball.palette.trail);
@@ -2017,33 +2280,17 @@ monsterBufferCtx.imageSmoothingEnabled = false;
 
 // Boss definitions
 const bosses = [
-    { name: 'Ancient Tree', type: 'tree' },
-    { name: 'Stone Golem', type: 'golem' },
-    { name: 'Fire Elemental', type: 'fire' },
-    { name: 'Ice Giant', type: 'ice' },
-    { name: 'Shadow Demon', type: 'shadow' },
-    { name: 'Crystal Serpent', type: 'serpent' },
-    { name: 'Thunder Bird', type: 'bird' },
-    { name: 'Lava Beast', type: 'lava' },
-    { name: 'Necromancer', type: 'necro' },
-    { name: 'Dark Dragon', type: 'darkdragon' }
+    { name: 'Starověký strom', type: 'tree' },
+    { name: 'Kamenný golem', type: 'golem' },
+    { name: 'Ohnivý elementál', type: 'fire' },
+    { name: 'Ledový obr', type: 'ice' },
+    { name: 'Stínový démon', type: 'shadow' },
+    { name: 'Křišťálový had', type: 'serpent' },
+    { name: 'Hromový pták', type: 'bird' },
+    { name: 'Lávová bestie', type: 'lava' },
+    { name: 'Nekromant', type: 'necro' },
+    { name: 'Temný drak', type: 'darkdragon' }
 ];
-
-// Stage names
-const stageNames = [
-    'Enchanted Forest',
-    'Stone Mountains',
-    'Volcanic Crater',
-    'Frozen Wastes',
-    'Shadow Realm',
-    'Crystal Caverns',
-    'Storm Peaks',
-    'Molten Core',
-    'Death\'s Domain',
-    'Dragon\'s Lair'
-];
-
-const TOTAL_STAGES = stageNames.length;
 
 const stageThemeByStage = {
     1: 'forest',
@@ -2506,20 +2753,19 @@ function drawWizard() {
     const x = 50;
     const y = 80;
     const bounce = Math.sin(Date.now() / 300) * 3;
-    const windWave = Math.sin(Date.now() / 200);
 
     if(game.isGameOver && !game.witchDeathAnim) {
         return;
     }
 
     // Death animation handling
-    let scale = 1;
+    let scale = 1.2; // 20% větší
     if(game.witchDeathAnim) {
         const elapsed = Date.now() - game.witchDeathAnim.startTime;
 
         if(game.witchDeathAnim.phase === 'inflate') {
             const inflateProgress = Math.min(elapsed / 800, 1);
-            scale = 1 + inflateProgress * 1.5;
+            scale = 1.2 + inflateProgress * 1.5;
         } else {
             // After explosion - hide witch completely
             return;
@@ -2527,85 +2773,106 @@ function drawWizard() {
     }
 
     ctx.save();
-    ctx.translate(x + 25, y + 25);
+    ctx.translate(x + 25, y + 35);
     ctx.scale(scale, scale);
-    ctx.translate(-25, -25);
+    ctx.translate(-25, -35);
 
-    // Broomstick handle
+    // Broomstick handle (horizontal)
     ctx.fillStyle = '#7a4a1a';
-    ctx.fillRect(x - 10, y + 34 + bounce, 70, 5);
+    ctx.fillRect(x - 5, y + 28 + bounce, 65, 4);
     ctx.fillStyle = '#5f3610';
-    ctx.fillRect(x + 40, y + 33 + bounce, 20, 7);
+    ctx.fillRect(x + 45, y + 27 + bounce, 15, 6);
 
-    // Broom binding and bristles
-    const sway = Math.sin(Date.now() / 160) * 2;
+    // Broom binding and bristles (pointing right)
+    const sway = Math.sin(Date.now() / 150) * 2;
     ctx.fillStyle = '#c48a3a';
-    ctx.fillRect(x - 8, y + 32 + bounce, 6, 10);
+    ctx.fillRect(x - 3, y + 26 + bounce, 6, 8);
     ctx.fillStyle = '#e0a647';
     for(let i = 0; i < 5; i++) {
-        const offset = sway + i * 3;
-        ctx.fillRect(x - 20 + offset, y + 30 + bounce + i, 10, 3);
-        ctx.fillRect(x - 20 + offset, y + 36 + bounce + i, 12, 3);
+        const offset = sway + i * 2;
+        ctx.fillRect(x - 18 + offset, y + 24 + bounce + i, 12, 2);
+        ctx.fillRect(x - 18 + offset, y + 30 + bounce + i, 13, 2);
     }
 
-    // Legs tucked along the broom
+    // Legs dangling down - each swinging independently
+    const leftLegSwing = Math.sin(Date.now() / 320) * 3;
+    const rightLegSwing = Math.sin(Date.now() / 280 + 1.5) * 3;
     ctx.fillStyle = '#28122b';
-    ctx.fillRect(x + 20, y + 36 + bounce, 10, 6);
-    ctx.fillRect(x + 30, y + 36 + bounce, 12, 6);
-    ctx.fillRect(x + 42, y + 38 + bounce, 8, 4);
+    // Left leg - bent at knee
+    ctx.fillRect(x + 14, y + 32 + bounce, 6, 10);
+    ctx.fillRect(x + 14 + leftLegSwing, y + 42 + bounce, 6, 8);
+    ctx.fillRect(x + 13 + leftLegSwing, y + 49 + bounce, 8, 6);
+    // Right leg - bent at knee
+    ctx.fillRect(x + 24, y + 32 + bounce, 6, 10);
+    ctx.fillRect(x + 24 + rightLegSwing, y + 42 + bounce, 6, 8);
+    ctx.fillRect(x + 23 + rightLegSwing, y + 49 + bounce, 8, 6);
 
-    // Dress billowing back
-    const dressWave = Math.sin(Date.now() / 190) * 3;
-    const dressTrail = Math.sin(Date.now() / 210 + 0.4) * 4;
+    // Dress flowing in wind
+    const dressWave = Math.sin(Date.now() / 180) * 4;
+    const dressFlow = Math.sin(Date.now() / 200 + 0.3) * 5;
     ctx.fillStyle = '#5b1a6d';
-    ctx.fillRect(x + 18, y + 14 + bounce, 18, 18);
-    ctx.fillRect(x + 14 + dressWave, y + 20 + bounce, 12, 16);
-    ctx.fillRect(x + 10 + dressTrail, y + 24 + bounce, 10, 12);
+    // Main dress body
+    ctx.fillRect(x + 12, y + 8 + bounce, 20, 24);
+    // Dress flowing left in wind
+    ctx.fillRect(x + 6 + dressWave, y + 12 + bounce, 16, 20);
+    ctx.fillRect(x + 2 + dressFlow, y + 16 + bounce, 14, 16);
     ctx.fillStyle = '#732386';
-    ctx.fillRect(x + 20, y + 18 + bounce, 14, 12);
-    ctx.fillRect(x + 12 + dressWave, y + 28 + bounce, 12, 8);
+    // Dress highlights
+    ctx.fillRect(x + 16, y + 12 + bounce, 12, 16);
+    ctx.fillRect(x + 8 + dressWave, y + 18 + bounce, 10, 12);
 
     // Torso leaning forward
     ctx.fillStyle = '#ffd6bc';
-    ctx.fillRect(x + 26, y + 12 + bounce, 8, 12);
+    ctx.fillRect(x + 22, y + 6 + bounce, 10, 14);
 
-    // Arms gripping the broomstick
-    ctx.fillRect(x + 18, y + 18 + bounce, 5, 6);
-    ctx.fillRect(x + 32, y + 18 + bounce, 5, 6);
-    ctx.fillRect(x + 21, y + 22 + bounce, 6, 4);
-    ctx.fillRect(x + 33, y + 22 + bounce, 6, 4);
+    // Light purple shirt
+    ctx.fillStyle = '#c8a0e8';
+    ctx.fillRect(x + 22, y + 8 + bounce, 10, 12);
 
-    // Hands wrapped around handle
-    ctx.fillRect(x + 16, y + 24 + bounce, 4, 4);
-    ctx.fillRect(x + 36, y + 24 + bounce, 4, 4);
+    // Arms reaching forward (right)
+    // Left arm
+    ctx.fillRect(x + 18, y + 10 + bounce, 6, 6);
+    ctx.fillRect(x + 22, y + 14 + bounce, 8, 5);
+    // Right arm
+    ctx.fillRect(x + 28, y + 10 + bounce, 6, 6);
+    ctx.fillRect(x + 32, y + 14 + bounce, 8, 5);
 
-    // Head looking forward
+    // Hands gripping broomstick forward
+    ctx.fillRect(x + 28, y + 18 + bounce, 4, 5);
+    ctx.fillRect(x + 38, y + 18 + bounce, 4, 5);
+
+    // Head looking right, leaning forward
     ctx.fillStyle = '#ffd6bc';
-    ctx.fillRect(x + 24, y - 6 + bounce, 12, 14);
-    ctx.fillRect(x + 32, y - 2 + bounce, 2, 8);
+    ctx.fillRect(x + 26, y - 6 + bounce, 12, 12);
+    // Nose pointing right
+    ctx.fillRect(x + 38, y - 2 + bounce, 2, 4);
 
-    // Eye and features facing forward
+    // Eye looking right
     ctx.fillStyle = '#201020';
-    ctx.fillRect(x + 32, y + 0 + bounce, 2, 2);
-    ctx.fillRect(x + 28, y + 3 + bounce, 3, 1);
+    ctx.fillRect(x + 34, y - 2 + bounce, 3, 3);
+    // Mouth
+    ctx.fillRect(x + 32, y + 3 + bounce, 4, 1);
 
-    // Long black hair streaming behind
-    const hairFlow = Math.sin(Date.now() / 140) * 4;
-    const hairRipple = Math.sin(Date.now() / 160 + 0.5) * 5;
+    // Long dark hair flowing left in wind
+    const hairFlow1 = Math.sin(Date.now() / 130) * 6;
+    const hairFlow2 = Math.sin(Date.now() / 150 + 0.4) * 7;
+    const hairFlow3 = Math.sin(Date.now() / 170 + 0.8) * 8;
     ctx.fillStyle = '#0b0b15';
-    ctx.fillRect(x + 14 + hairFlow, y - 4 + bounce, 10, 12);
-    ctx.fillRect(x + 6 + hairRipple, y - 2 + bounce, 12, 10);
-    ctx.fillRect(x + 2 + hairRipple, y + 2 + bounce, 12, 8);
-    ctx.fillRect(x - 2 + hairFlow, y + 4 + bounce, 10, 6);
+    // Hair layers flowing to the left
+    ctx.fillRect(x + 22, y - 8 + bounce, 12, 10);
+    ctx.fillRect(x + 16 + hairFlow1, y - 6 + bounce, 14, 12);
+    ctx.fillRect(x + 12 + hairFlow2, y - 4 + bounce, 16, 14);
+    ctx.fillRect(x + 8 + hairFlow3, y - 2 + bounce, 14, 16);
+    ctx.fillRect(x + 4 + hairFlow2, y + 0 + bounce, 12, 18);
+    // Additional flowing strands
+    ctx.fillRect(x + 14 + hairFlow1, y - 10 + bounce, 8, 8);
+    ctx.fillRect(x + 10 + hairFlow3, y - 8 + bounce, 10, 10);
+    ctx.fillRect(x + 2 + hairFlow1, y + 2 + bounce, 10, 14);
 
-    // Additional hair strands for motion
-    ctx.fillRect(x + 8 + hairRipple, y - 6 + bounce, 6, 6);
-    ctx.fillRect(x + 0 + hairFlow, y - 2 + bounce, 6, 8);
-
-    // Wind-swept dress highlights
+    // Dress highlights in wind
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.fillRect(x + 18, y + 20 + bounce, 6, 10);
-    ctx.fillRect(x + 12 + dressTrail, y + 26 + bounce, 4, 8);
+    ctx.fillRect(x + 18, y + 14 + bounce, 6, 10);
+    ctx.fillRect(x + 8 + dressFlow, y + 20 + bounce, 4, 8);
 
     // Magic sparkle
     if (game.spellEffect) {
@@ -3028,6 +3295,14 @@ function drawMonster(monster, x, y, scale = 1) {
     ctx.imageSmoothingEnabled = false;
 
     ctx.save();
+    let previousGlobalAlpha = ctx.globalAlpha;
+    if(game.monsterHitFlash > 0) {
+        ctx.globalAlpha = 0.65 + Math.sin(game.monsterHitFlash * 25) * 0.35;
+        game.monsterHitFlash -= 0.05;
+        if(game.monsterHitFlash < 0) {
+            game.monsterHitFlash = 0;
+        }
+    }
     ctx.translate(x + 40, y + 40);
     ctx.scale(scale, scale);
     ctx.translate(-40, -40);
@@ -3058,12 +3333,11 @@ function drawMonster(monster, x, y, scale = 1) {
     ctx.restore();
 
     ctx.imageSmoothingEnabled = previousSmoothing;
+    ctx.globalAlpha = previousGlobalAlpha;
 }
 
 // Draw boss
 function drawBoss(boss, x, y, scale = 1) {
-    game.bossAnimFrame += 0.05;
-
     // Death animation handling
     if(game.bossDeathAnim) {
         const elapsed = Date.now() - game.bossDeathAnim.startTime;
@@ -3101,61 +3375,241 @@ function drawBoss(boss, x, y, scale = 1) {
     const rightBranch = Math.sin(game.bossAnimFrame + Math.PI) * 10;
 
     switch(boss.type) {
-        case 'tree':
-            // Trunk
-            ctx.fillStyle = '#654321';
-            ctx.fillRect(70 + sway * 0.3, 80, 60, 120);
+        case 'tree': {
+            // Ancient Dark Tree - gnarled trunk with torn roots and swaying branches
+            const treeX = 100;
+            const treeY = 140;
+            const anim = game.bossAnimFrame;
+            const bodyRock = Math.sin(anim * 1.2) * 4;
 
-            // Roots
-            ctx.fillStyle = '#543210';
-            for(let i = 0; i < 5; i++) {
-                const rootX = 50 + i * 25;
-                const rootSway = Math.sin(game.bossAnimFrame + i) * 3;
-                ctx.fillRect(rootX + rootSway, 195, 15, 20);
-                ctx.fillRect(rootX + rootSway - 5, 210, 25, 10);
+            ctx.save();
+            ctx.translate(treeX, treeY);
+            ctx.scale(0.8, 0.8);
+
+            // Torn dangling roots - thick and fractal-branching
+            ctx.strokeStyle = '#2a1f14';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            const mainRoots = [
+                { x: -35, baseAngle: Math.PI / 2, phase: 0 },
+                { x: -15, baseAngle: Math.PI / 2 + 0.2, phase: 1.2 },
+                { x: 5, baseAngle: Math.PI / 2 - 0.15, phase: 0.6 },
+                { x: 20, baseAngle: Math.PI / 2 + 0.15, phase: 1.8 },
+                { x: 35, baseAngle: Math.PI / 2 - 0.1, phase: 0.3 }
+            ];
+
+            // Recursive root drawing function with gnarled, bent segments
+            const drawRoot = (startX, startY, angle, length, thickness, depth, phase) => {
+                if (depth <= 0 || length < 8) return;
+
+                const sway = Math.sin(anim * 1.8 + phase) * (0.15 / (4 - depth));
+                const swayX = Math.sin(anim * 1.5 + phase) * (12 / (4 - depth));
+
+                // Draw bent root with multiple segments instead of straight line
+                const segments = 3;
+                ctx.lineWidth = thickness;
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+
+                let currentX = startX;
+                let currentY = startY;
+                let currentAngle = angle;
+
+                for (let s = 0; s < segments; s++) {
+                    // Add bending variation to each segment
+                    const bendVariation = Math.sin(phase * 2 + s * 1.5) * 0.25 + sway;
+                    currentAngle += bendVariation;
+
+                    const segLength = length / segments;
+                    const nextX = currentX + Math.cos(currentAngle) * segLength + (s === segments - 1 ? swayX : swayX * (s / segments));
+                    const nextY = currentY + Math.sin(currentAngle) * segLength;
+
+                    // Use quadratic curve for organic bend
+                    const midX = (currentX + nextX) / 2 + Math.sin(phase + s) * 3;
+                    const midY = (currentY + nextY) / 2;
+                    ctx.quadraticCurveTo(midX, midY, nextX, nextY);
+
+                    currentX = nextX;
+                    currentY = nextY;
+                }
+                ctx.stroke();
+
+                const endX = currentX;
+                const endY = currentY;
+
+                // Draw root tip knot
+                if (depth === 1) {
+                    ctx.fillStyle = '#1a140f';
+                    ctx.beginPath();
+                    ctx.arc(endX, endY, thickness * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Branch into smaller roots
+                if (depth > 1) {
+                    const numBranches = 2;
+                    for (let b = 0; b < numBranches; b++) {
+                        const branchAngle = currentAngle + (b === 0 ? -0.3 : 0.3) + Math.sin(anim + phase + b) * 0.2;
+                        const branchLength = length * 0.65;
+                        const branchThickness = thickness * 0.6;
+                        drawRoot(endX, endY, branchAngle, branchLength, branchThickness, depth - 1, phase + b * 0.5);
+                    }
+                }
+            };
+
+            // Draw all main roots
+            for (const root of mainRoots) {
+                drawRoot(root.x, 50, root.baseAngle, 55, 12, 3, root.phase);
             }
 
-            // Tree crown
-            ctx.fillStyle = '#2d5016';
-            ctx.fillRect(40, 40 + breathe, 120, 50);
-            ctx.fillRect(50, 20 + breathe, 100, 30);
-            ctx.fillRect(60, 10 + breathe, 80, 20);
+            // Main dark trunk - rough, gnarled shape (extended)
+            ctx.fillStyle = '#352a1f';
+            ctx.beginPath();
+            ctx.moveTo(-40, 50);
+            ctx.lineTo(-45 + bodyRock * 0.2, 20);
+            ctx.lineTo(-48 + bodyRock * 0.3, -20);
+            ctx.lineTo(-45 + bodyRock * 0.4, -50);
+            ctx.lineTo(-42 + bodyRock * 0.5, -80);
+            ctx.lineTo(-30 + bodyRock * 0.7, -110);
+            ctx.lineTo(0 + bodyRock, -120);
+            ctx.lineTo(30 + bodyRock * 0.7, -110);
+            ctx.lineTo(42 + bodyRock * 0.5, -80);
+            ctx.lineTo(45 + bodyRock * 0.4, -50);
+            ctx.lineTo(48 + bodyRock * 0.3, -20);
+            ctx.lineTo(45 + bodyRock * 0.2, 20);
+            ctx.lineTo(40, 50);
+            ctx.closePath();
+            ctx.fill();
 
-            // Branches (animated)
-            ctx.fillStyle = '#654321';
+            // Bark texture - dark cracks (extended along longer trunk)
+            ctx.strokeStyle = '#1a140f';
+            ctx.lineWidth = 3;
+            for(let i = 0; i < 12; i++) {
+                const crackY = -105 + i * 15;
+                const crackSway = Math.sin(anim * 1.2 + i * 0.5) * 3;
+                ctx.beginPath();
+                ctx.moveTo(-35 + bodyRock * 0.6, crackY);
+                ctx.lineTo(-20 + crackSway + bodyRock * 0.6, crackY + 10);
+                ctx.stroke();
 
-            // Left branches
-            ctx.fillRect(30 + leftBranch, 60 + breathe, 40, 10);
-            ctx.fillRect(20 + leftBranch * 1.2, 50 + breathe, 30, 8);
-
-            // Right branches
-            ctx.fillRect(130 + rightBranch, 60 + breathe, 40, 10);
-            ctx.fillRect(150 + rightBranch * 1.2, 50 + breathe, 30, 8);
-
-            // Eyes
-            ctx.fillStyle = '#ffff00';
-            ctx.fillRect(75, 90, 15, 15);
-            ctx.fillRect(110, 90, 15, 15);
-
-            // Pupils
-            ctx.fillStyle = '#000';
-            ctx.fillRect(80 + Math.sin(game.bossAnimFrame * 3) * 3, 95, 5, 5);
-            ctx.fillRect(115 + Math.sin(game.bossAnimFrame * 3) * 3, 95, 5, 5);
-
-            // Mouth (animated)
-            ctx.fillStyle = '#000';
-            const treeMouthOpen = Math.abs(Math.sin(game.bossAnimFrame * 2)) * 10;
-            ctx.fillRect(80, 120, 40, 5);
-            ctx.fillRect(85, 125, 30, treeMouthOpen);
-
-            // Leaves detail
-            ctx.fillStyle = '#3d6026';
-            for(let i = 0; i < 10; i++) {
-                const leafX = 50 + i * 10;
-                const leafY = 30 + breathe + Math.sin(game.bossAnimFrame + i) * 5;
-                ctx.fillRect(leafX, leafY, 8, 8);
+                ctx.beginPath();
+                ctx.moveTo(35 + bodyRock * 0.6, crackY);
+                ctx.lineTo(20 - crackSway + bodyRock * 0.6, crackY + 10);
+                ctx.stroke();
             }
+
+            // Twisted, gnarled branches - multiple segments for aged appearance
+            const branches = [
+                { startX: -42, startY: -90, baseAngle: -0.6, segments: 3, phase: 0 },
+                { startX: -35, startY: -65, baseAngle: -0.5, segments: 3, phase: 0.8 },
+                { startX: 42, startY: -90, baseAngle: 0.6, segments: 3, phase: 1.2 },
+                { startX: 35, startY: -65, baseAngle: 0.5, segments: 3, phase: 1.9 },
+                { startX: -20, startY: -105, baseAngle: -0.3, segments: 2, phase: 0.5 },
+                { startX: 20, startY: -105, baseAngle: 0.3, segments: 2, phase: 1.5 }
+            ];
+
+            ctx.strokeStyle = '#2a1f14';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            for(const branch of branches) {
+                const rockX = bodyRock * 0.7;
+                const rockY = bodyRock * 0.3;
+
+                let currentX = branch.startX + rockX;
+                let currentY = branch.startY + rockY;
+                let currentAngle = branch.baseAngle;
+
+                // Draw thick base segment (3x stronger)
+                ctx.lineWidth = 42;
+                ctx.beginPath();
+                ctx.moveTo(currentX, currentY);
+
+                // Multiple segments with varying angles
+                for(let seg = 0; seg < branch.segments; seg++) {
+                    const segmentWave = Math.sin(anim * 2.3 + branch.phase + seg * 0.5) * 0.25;
+                    const angleVariation = (Math.sin(seg * 2.1) * 0.4) + segmentWave;
+                    currentAngle += angleVariation;
+
+                    const segLength = 25 - seg * 3;
+                    const nextX = currentX + Math.cos(currentAngle) * segLength;
+                    const nextY = currentY + Math.sin(currentAngle) * segLength;
+
+                    ctx.lineTo(nextX, nextY);
+                    currentX = nextX;
+                    currentY = nextY;
+
+                    // Taper the branch (3x stronger)
+                    ctx.lineWidth = Math.max(12, 42 - seg * 12);
+                }
+                ctx.stroke();
+
+                // Add smaller twigs at the end (also thicker)
+                const numTwigs = 2;
+                for(let t = 0; t < numTwigs; t++) {
+                    const twigAngle = currentAngle + (t === 0 ? -0.4 : 0.4) + Math.sin(anim * 3 + branch.phase + t) * 0.3;
+                    const twigLength = 12;
+
+                    ctx.lineWidth = 9;
+                    ctx.beginPath();
+                    ctx.moveTo(currentX, currentY);
+                    ctx.lineTo(
+                        currentX + Math.cos(twigAngle) * twigLength,
+                        currentY + Math.sin(twigAngle) * twigLength
+                    );
+                    ctx.stroke();
+                }
+            }
+
+            // Glowing yellow eyes
+            const eyeGlow = Math.sin(anim * 4) * 0.3 + 0.7;
+            const pupilMove = Math.sin(anim * 2) * 3;
+            const eyeY = -35;
+
+            // Left eye
+            ctx.fillStyle = `rgba(255, 220, 50, ${eyeGlow})`;
+            ctx.beginPath();
+            ctx.ellipse(-18 + bodyRock * 0.6, eyeY, 12, 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eye glow aura
+            ctx.fillStyle = `rgba(255, 220, 50, ${eyeGlow * 0.3})`;
+            ctx.beginPath();
+            ctx.ellipse(-18 + bodyRock * 0.6, eyeY, 18, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Right eye
+            ctx.fillStyle = `rgba(255, 220, 50, ${eyeGlow})`;
+            ctx.beginPath();
+            ctx.ellipse(18 + bodyRock * 0.6, eyeY, 12, 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eye glow aura
+            ctx.fillStyle = `rgba(255, 220, 50, ${eyeGlow * 0.3})`;
+            ctx.beginPath();
+            ctx.ellipse(18 + bodyRock * 0.6, eyeY, 18, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Dark pupils
+            ctx.fillStyle = '#1a0f00';
+            ctx.beginPath();
+            ctx.ellipse(-18 + bodyRock * 0.6 + pupilMove, eyeY, 5, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(18 + bodyRock * 0.6 + pupilMove, eyeY, 5, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Wood grain highlights
+            ctx.fillStyle = 'rgba(75, 60, 45, 0.3)';
+            for(let i = 0; i < 7; i++) {
+                const grainY = -100 + i * 25;
+                ctx.fillRect(-25 + bodyRock * 0.6, grainY, 50, 3);
+            }
+
+            ctx.restore();
             break;
+        }
 
         case 'golem':
             // Stone body
@@ -3181,128 +3635,1130 @@ function drawBoss(boss, x, y, scale = 1) {
             ctx.fillRect(90, 120, 3, 40);
             break;
 
+        case 'ice': {
+            const bob = Math.sin(game.bossAnimFrame * 1.4) * 3;
+            const shardSway = Math.sin(game.bossAnimFrame * 2) * 4;
+            const baseColor = '#b6e4ff';
+            const shadowColor = '#7fb5d6';
+            const highlightColor = '#e0f6ff';
+
+            const cubes = [
+                { x: 40, y: 130, w: 60, h: 50 },
+                { x: 100, y: 120, w: 60, h: 60 },
+                { x: 60, y: 80, w: 55, h: 55 },
+                { x: 110, y: 70, w: 45, h: 50 },
+                { x: 70, y: 45, w: 40, h: 40 },
+                { x: 115, y: 35, w: 36, h: 38 }
+            ];
+
+            for(let i = 0; i < cubes.length; i++) {
+                const cube = cubes[i];
+                const breathePhase = Math.sin(game.bossAnimFrame * 1.2 + i * 0.8) * 3;
+                const xShift = Math.sin(game.bossAnimFrame * 1.5 + i * 1.2) * 2;
+                const yShift = Math.sin(game.bossAnimFrame * 1.3 + i * 0.9) * 2;
+
+                const xOffset = cube.x + xShift;
+                const yOffset = cube.y + bob + yShift + breathePhase;
+
+                ctx.fillStyle = baseColor;
+                ctx.fillRect(xOffset, yOffset, cube.w, cube.h);
+
+                ctx.fillStyle = highlightColor;
+                ctx.fillRect(xOffset, yOffset, cube.w, 6);
+                ctx.fillRect(xOffset, yOffset, 6, cube.h);
+
+                ctx.fillStyle = shadowColor;
+                ctx.fillRect(xOffset + cube.w - 6, yOffset, 6, cube.h);
+                ctx.fillRect(xOffset, yOffset + cube.h - 6, cube.w, 6);
+            }
+
+            // Spojené hrany mezi kvádry pro 3D dojem (animované s kostkami)
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            const edge1Shift = Math.sin(game.bossAnimFrame * 1.5 + 1 * 1.2) * 2;
+            const edge2Shift = Math.sin(game.bossAnimFrame * 1.5 + 2 * 1.2) * 2;
+            ctx.fillRect(95 + edge1Shift, 120 + bob, 10, 55);
+            ctx.fillRect(85 + edge2Shift, 95 + bob, 12, 40);
+
+            // Rampouchy animované do stran
+            const icicles = [
+                { x: 55, baseY: 180, length: 25 },
+                { x: 85, baseY: 185, length: 30 },
+                { x: 125, baseY: 180, length: 28 },
+                { x: 150, baseY: 170, length: 35 }
+            ];
+
+            ctx.fillStyle = '#dff2ff';
+            for(let i = 0; i < icicles.length; i++) {
+                const shard = icicles[i];
+                const sway = Math.sin(game.bossAnimFrame * 2.2 + i) * 2 + shardSway;
+                ctx.beginPath();
+                ctx.moveTo(shard.x, shard.baseY + bob);
+                ctx.lineTo(shard.x + sway, shard.baseY + bob + shard.length);
+                ctx.lineTo(shard.x + 4, shard.baseY + bob);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Oči na horních kvádrech (animované s kostkami)
+            const eyeGlint = Math.sin(game.bossAnimFrame * 4) * 0.4 + 0.6;
+            const eye1XShift = Math.sin(game.bossAnimFrame * 1.5 + 2 * 1.2) * 2;
+            const eye1YShift = Math.sin(game.bossAnimFrame * 1.3 + 2 * 0.9) * 2;
+            const eye1Breathe = Math.sin(game.bossAnimFrame * 1.2 + 2 * 0.8) * 3;
+            const eye2XShift = Math.sin(game.bossAnimFrame * 1.5 + 3 * 1.2) * 2;
+            const eye2YShift = Math.sin(game.bossAnimFrame * 1.3 + 3 * 0.9) * 2;
+            const eye2Breathe = Math.sin(game.bossAnimFrame * 1.2 + 3 * 0.8) * 3;
+
+            ctx.fillStyle = '#0f1a2e';
+            ctx.fillRect(80 + eye1XShift, 60 + bob + eye1YShift + eye1Breathe, 10, 10);
+            ctx.fillRect(127 + eye2XShift, 52 + bob + eye2YShift + eye2Breathe, 10, 10);
+
+            ctx.fillStyle = `rgba(202, 238, 255, ${0.7 + eyeGlint * 0.3})`;
+            ctx.fillRect(82 + eye1XShift, 62 + bob + eye1YShift + eye1Breathe, 6, 6);
+            ctx.fillRect(129 + eye2XShift, 54 + bob + eye2YShift + eye2Breathe, 6, 6);
+
+            // Zmrzlá elementární koule uprostřed (animovaná s kostkami)
+            const orbXShift = Math.sin(game.bossAnimFrame * 1.5 + 1.5 * 1.2) * 2;
+            const orbYShift = Math.sin(game.bossAnimFrame * 1.3 + 1.5 * 0.9) * 2;
+            const orbBreathe = Math.sin(game.bossAnimFrame * 1.2 + 1.5 * 0.8) * 3;
+            const orbX = 105 + orbXShift;
+            const orbY = 110 + bob + orbYShift + orbBreathe;
+            const pulse = Math.sin(game.bossAnimFrame * 3) * 0.15 + 0.85;
+            const orbRadius = 26;
+            const gradient = ctx.createRadialGradient(orbX, orbY, 4, orbX, orbY, orbRadius);
+            gradient.addColorStop(0, `rgba(255,255,255,${0.95 * pulse})`);
+            gradient.addColorStop(0.5, `rgba(173,224,255,${0.7 * pulse})`);
+            gradient.addColorStop(1, 'rgba(90,170,220,0.25)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(orbX, orbY, orbRadius + 6 + Math.sin(game.bossAnimFrame * 2) * 2, 0, Math.PI * 2);
+            ctx.stroke();
+            break;
+        }
+
         case 'fire':
-        case 'lava':
-            // Massive lava beast (stage 2 boss)
-            const isLavaBoss = boss.type === 'lava' || game.stage === 2;
+        case 'lava': {
+            if(boss.type === 'lava') {
+                // Lava Beast - massive quadruped beast, NOT a dragon
+                const beastX = 100;
+                const beastY = 140 + breathe;
+                const anim = game.bossAnimFrame;
+                const breathPulse = Math.sin(anim * 1.8) * 8;
+                const legSway = Math.sin(anim * 2.5);
 
-            // Core body - molten rock
-            ctx.fillStyle = isLavaBoss ? '#2B0000' : '#8b0000';
-            ctx.fillRect(40, 60 + breathe, 120, 140);
+                ctx.save();
+                ctx.translate(beastX, beastY);
+                ctx.scale(-1, 1);
 
-            // Lava cracks on body (animated glow)
-            const crackGlow = Math.sin(game.bossAnimFrame * 4) * 0.5 + 0.5;
-            ctx.fillStyle = '#FF4500';
-            ctx.globalAlpha = 0.7 + crackGlow * 0.3;
+                // Four massive legs
+                const legs = [
+                    { x: -40, phase: 0 },
+                    { x: -15, phase: Math.PI },
+                    { x: 15, phase: 0 },
+                    { x: 40, phase: Math.PI }
+                ];
 
-            // Vertical cracks
-            ctx.fillRect(60, 70 + breathe, 8, 120);
-            ctx.fillRect(90, 80 + breathe, 6, 110);
-            ctx.fillRect(120, 75 + breathe, 8, 115);
+                for(const leg of legs) {
+                    const legMove = Math.sin(anim * 2 + leg.phase) * 5;
 
-            // Horizontal cracks
-            ctx.fillRect(50, 100 + breathe, 100, 6);
-            ctx.fillRect(55, 140 + breathe, 90, 8);
+                    // Leg
+                    ctx.fillStyle = '#8b1a00';
+                    ctx.fillRect(leg.x - 6, 30 + legMove, 12, 50);
+                    ctx.fillRect(leg.x - 8, 75 + legMove, 16, 15);
 
-            ctx.globalAlpha = 1;
-
-            // Bright lava core
-            ctx.fillStyle = '#FFAA00';
-            ctx.fillRect(85, 110 + breathe, 30, 40);
-            ctx.fillRect(75, 120 + breathe, 50, 20);
-
-            // Arms - dripping lava
-            ctx.fillStyle = isLavaBoss ? '#3B0000' : '#8b0000';
-            ctx.fillRect(20, 90 + breathe + leftBranch, 25, 80);
-            ctx.fillRect(155, 90 + breathe + rightBranch, 25, 80);
-
-            // Lava drips from arms
-            for(let i = 0; i < 3; i++) {
-                const dripPhase = (game.bossAnimFrame * 2 + i) % 2;
-                if(dripPhase < 1) {
-                    const dripY = 170 + breathe + leftBranch + dripPhase * 30;
-                    ctx.fillStyle = '#FF6600';
-                    ctx.fillRect(28 + i * 8, dripY, 4, 8);
+                    // Lava cracks on legs
+                    ctx.fillStyle = '#ff4500';
+                    ctx.globalAlpha = 0.7 + Math.sin(anim * 3 + leg.x) * 0.3;
+                    ctx.fillRect(leg.x - 2, 40 + legMove, 4, 35);
+                    ctx.globalAlpha = 1;
                 }
-            }
 
-            for(let i = 0; i < 3; i++) {
-                const dripPhase = (game.bossAnimFrame * 2 + i + 0.5) % 2;
-                if(dripPhase < 1) {
-                    const dripY = 170 + breathe + rightBranch + dripPhase * 30;
-                    ctx.fillStyle = '#FF6600';
-                    ctx.fillRect(163 + i * 8, dripY, 4, 8);
+                // Massive body - boulder-like, irregular shape
+                ctx.fillStyle = '#5a0f00';
+                ctx.beginPath();
+                ctx.moveTo(-55, 30);
+                ctx.lineTo(-60, 0);
+                ctx.lineTo(-50, -25);
+                ctx.lineTo(-30, -35);
+                ctx.lineTo(0, -40 + breathPulse);
+                ctx.lineTo(30, -35);
+                ctx.lineTo(50, -25);
+                ctx.lineTo(60, 0);
+                ctx.lineTo(55, 30);
+                ctx.closePath();
+                ctx.fill();
+
+                // Molten core cracks throughout body
+                ctx.strokeStyle = '#ff6a00';
+                ctx.lineWidth = 6;
+                ctx.globalAlpha = 0.8 + Math.sin(anim * 4) * 0.2;
+                ctx.beginPath();
+                ctx.moveTo(-45, 25);
+                ctx.lineTo(-35, -10);
+                ctx.lineTo(-15, -25);
+                ctx.lineTo(5, -30 + breathPulse);
+                ctx.lineTo(25, -20);
+                ctx.lineTo(40, -5);
+                ctx.lineTo(50, 20);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(-50, 10);
+                ctx.lineTo(-20, 15);
+                ctx.lineTo(10, 10);
+                ctx.lineTo(45, 15);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+
+                // Glowing lava pools/spots
+                const lavaSpots = [
+                    { x: -35, y: -15, r: 12 },
+                    { x: 0, y: -25 + breathPulse, r: 15 },
+                    { x: 30, y: -10, r: 10 },
+                    { x: -15, y: 5, r: 8 },
+                    { x: 20, y: 10, r: 9 }
+                ];
+
+                for(const spot of lavaSpots) {
+                    const spotGradient = ctx.createRadialGradient(spot.x, spot.y, 0, spot.x, spot.y, spot.r);
+                    const intensity = Math.sin(anim * 3 + spot.x) * 0.3 + 0.7;
+                    spotGradient.addColorStop(0, `rgba(255, 255, 100, ${intensity})`);
+                    spotGradient.addColorStop(0.4, `rgba(255, 100, 0, ${intensity * 0.8})`);
+                    spotGradient.addColorStop(1, 'rgba(139, 26, 0, 0)');
+                    ctx.fillStyle = spotGradient;
+                    ctx.beginPath();
+                    ctx.arc(spot.x, spot.y, spot.r, 0, Math.PI * 2);
+                    ctx.fill();
                 }
-            }
 
-            // Head
-            ctx.fillStyle = isLavaBoss ? '#2B0000' : '#8b0000';
-            ctx.fillRect(60, 30 + breathe, 80, 40);
+                // Rocky spikes/horns on back
+                ctx.fillStyle = '#3d0900';
+                const spikes = [-40, -20, 0, 20, 40];
+                for(let i = 0; i < spikes.length; i++) {
+                    const spikeX = spikes[i];
+                    const spikeHeight = 15 + Math.sin(anim * 1.5 + i) * 5;
+                    ctx.beginPath();
+                    ctx.moveTo(spikeX - 8, -35);
+                    ctx.lineTo(spikeX, -35 - spikeHeight);
+                    ctx.lineTo(spikeX + 8, -35);
+                    ctx.closePath();
+                    ctx.fill();
 
-            // Horns - magma
-            ctx.fillStyle = '#FF4500';
-            ctx.fillRect(50, 20 + breathe, 15, 25);
-            ctx.fillRect(135, 20 + breathe, 15, 25);
-            ctx.fillRect(45, 15 + breathe, 10, 15);
-            ctx.fillRect(145, 15 + breathe, 10, 15);
+                    // Glowing tip
+                    ctx.fillStyle = '#ff4500';
+                    ctx.globalAlpha = 0.6 + Math.sin(anim * 4 + i) * 0.4;
+                    ctx.beginPath();
+                    ctx.arc(spikeX, -35 - spikeHeight, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = '#3d0900';
+                }
 
-            // Eyes - glowing like lava
-            const eyeGlow = Math.sin(game.bossAnimFrame * 5) * 0.3 + 0.7;
-            ctx.fillStyle = '#FFFF00';
-            ctx.globalAlpha = eyeGlow;
-            ctx.fillRect(75, 45 + breathe, 15, 15);
-            ctx.fillRect(110, 45 + breathe, 15, 15);
+                // Massive head
+                ctx.fillStyle = '#6b1500';
+                ctx.beginPath();
+                ctx.moveTo(55, -15);
+                ctx.lineTo(90, -20);
+                ctx.lineTo(105, -5);
+                ctx.lineTo(100, 15);
+                ctx.lineTo(80, 25);
+                ctx.lineTo(60, 20);
+                ctx.closePath();
+                ctx.fill();
 
-            // Eye pupils
-            ctx.fillStyle = '#FF0000';
-            ctx.fillRect(80, 50 + breathe, 5, 5);
-            ctx.fillRect(115, 50 + breathe, 5, 5);
-            ctx.globalAlpha = 1;
+                // Jaw with lava dripping
+                const jawOpen = Math.abs(Math.sin(anim * 1.5)) * 15;
+                ctx.fillStyle = '#5a0f00';
+                ctx.beginPath();
+                ctx.moveTo(80, 25);
+                ctx.lineTo(95, 25 + jawOpen);
+                ctx.lineTo(105, 20 + jawOpen);
+                ctx.lineTo(100, 15);
+                ctx.closePath();
+                ctx.fill();
 
-            // Mouth - lava glow
-            ctx.fillStyle = '#FF6600';
-            ctx.globalAlpha = 0.8;
-            const mouthOpen = Math.abs(Math.sin(game.bossAnimFrame * 2)) * 15;
-            ctx.fillRect(75, 60 + breathe, 50, 8);
-            ctx.fillRect(80, 68 + breathe, 40, mouthOpen);
-            ctx.globalAlpha = 1;
+                // Mouth interior (lava glow)
+                ctx.fillStyle = '#ff6a00';
+                ctx.globalAlpha = 0.8;
+                ctx.fillRect(82, 25, 18, jawOpen);
+                ctx.globalAlpha = 1;
 
-            // Flame eruptions from body (random bursts)
-            for(let i = 0; i < 5; i++) {
-                const flamePhase = (game.bossAnimFrame * 3 + i * 0.7) % 1;
-                if(flamePhase < 0.6) {
-                    const flameX = 50 + i * 25;
-                    const flameHeight = (1 - flamePhase / 0.6) * 30;
-                    const flameY = 60 + breathe - flameHeight;
+                // Teeth
+                ctx.fillStyle = '#2d1a00';
+                for(let t = 0; t < 4; t++) {
+                    ctx.fillRect(83 + t * 5, 25, 3, 8);
+                    ctx.fillRect(85 + t * 5, 25 + jawOpen - 8, 3, 8);
+                }
 
-                    // Flame
-                    ctx.fillStyle = '#FF6600';
-                    ctx.globalAlpha = 0.8;
-                    ctx.fillRect(flameX, flameY, 12, flameHeight);
+                // Eyes - glowing orange
+                const eyeGlow = Math.sin(anim * 5) * 0.3 + 0.7;
+                ctx.fillStyle = `rgba(255, 140, 0, ${eyeGlow})`;
+                ctx.fillRect(70, -8, 12, 10);
+                ctx.fillRect(88, -10, 12, 10);
 
-                    ctx.fillStyle = '#FFAA00';
-                    ctx.fillRect(flameX + 2, flameY + 5, 8, flameHeight - 10);
+                // Pupil
+                ctx.fillStyle = '#330000';
+                ctx.fillRect(73, -5, 6, 6);
+                ctx.fillRect(91, -7, 6, 6);
 
-                    ctx.fillStyle = '#FFFF00';
-                    ctx.fillRect(flameX + 4, flameY + 10, 4, Math.max(0, flameHeight - 15));
+                // Horn/tusk
+                ctx.fillStyle = '#2d1a00';
+                ctx.beginPath();
+                ctx.moveTo(105, -5);
+                ctx.lineTo(120, -15);
+                ctx.lineTo(115, -8);
+                ctx.closePath();
+                ctx.fill();
 
+                // Lava dripping from mouth
+                ctx.fillStyle = '#ff4500';
+                for(let d = 0; d < 3; d++) {
+                    const dripY = 25 + jawOpen + ((anim * 4 + d * 1.5) % 2) * 25;
+                    const dripX = 85 + d * 8;
+                    if((anim * 4 + d * 1.5) % 2 < 1) {
+                        ctx.globalAlpha = 1 - ((anim * 4 + d * 1.5) % 2) / 2;
+                        ctx.fillRect(dripX, dripY - 10, 3, 15);
+                        ctx.beginPath();
+                        ctx.arc(dripX + 1.5, dripY + 5, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.globalAlpha = 1;
+                    }
+                }
+
+                // Heat distortion particles rising
+                ctx.fillStyle = 'rgba(255, 100, 0, 0.3)';
+                for(let h = 0; h < 15; h++) {
+                    const heatY = -40 - ((anim * 3 + h * 10) % 100);
+                    const heatX = -50 + h * 8 + Math.sin(anim * 2 + h) * 10;
+                    const size = 4 + Math.sin(anim * 4 + h) * 3;
+                    ctx.globalAlpha = 0.3 - (Math.abs(heatY + 40) / 100) * 0.3;
+                    ctx.fillRect(heatX, heatY, size, size);
+                }
+                ctx.globalAlpha = 1;
+
+                ctx.restore();
+            } else {
+                const isStageTwo = game.stage === 2;
+
+                ctx.fillStyle = isStageTwo ? '#2B0000' : '#8b0000';
+                ctx.fillRect(40, 60 + breathe, 120, 140);
+
+                const crackGlow = Math.sin(game.bossAnimFrame * 4) * 0.5 + 0.5;
+                ctx.fillStyle = '#FF4500';
+                ctx.globalAlpha = 0.7 + crackGlow * 0.3;
+                ctx.fillRect(60, 70 + breathe, 8, 120);
+                ctx.fillRect(90, 80 + breathe, 6, 110);
+                ctx.fillRect(120, 75 + breathe, 8, 115);
+                ctx.fillRect(50, 100 + breathe, 100, 6);
+                ctx.fillRect(55, 140 + breathe, 90, 8);
+                ctx.globalAlpha = 1;
+
+                ctx.fillStyle = '#FFAA00';
+                ctx.fillRect(85, 110 + breathe, 30, 40);
+                ctx.fillRect(75, 120 + breathe, 50, 20);
+
+                const limbColor = isStageTwo ? '#3B0000' : '#8b0000';
+                ctx.fillStyle = limbColor;
+                ctx.fillRect(20, 90 + breathe + leftBranch, 25, 80);
+                ctx.fillRect(155, 90 + breathe + rightBranch, 25, 80);
+
+                for(let i = 0; i < 3; i++) {
+                    const dripPhase = (game.bossAnimFrame * 2 + i) % 2;
+                    if(dripPhase < 1) {
+                        const dripY = 170 + breathe + leftBranch + dripPhase * 30;
+                        ctx.fillStyle = '#FF6600';
+                        ctx.fillRect(28 + i * 8, dripY, 4, 8);
+                    }
+                }
+
+                for(let i = 0; i < 3; i++) {
+                    const dripPhase = (game.bossAnimFrame * 2 + i + 0.5) % 2;
+                    if(dripPhase < 1) {
+                        const dripY = 170 + breathe + rightBranch + dripPhase * 30;
+                        ctx.fillStyle = '#FF6600';
+                        ctx.fillRect(163 + i * 8, dripY, 4, 8);
+                    }
+                }
+
+                ctx.fillStyle = limbColor;
+                ctx.fillRect(60, 30 + breathe, 80, 40);
+
+                ctx.fillStyle = '#FF4500';
+                ctx.fillRect(50, 20 + breathe, 15, 25);
+                ctx.fillRect(135, 20 + breathe, 15, 25);
+                ctx.fillRect(45, 15 + breathe, 10, 15);
+                ctx.fillRect(145, 15 + breathe, 10, 15);
+
+                const eyeGlow = Math.sin(game.bossAnimFrame * 5) * 0.3 + 0.7;
+                ctx.fillStyle = '#FFFF00';
+                ctx.globalAlpha = eyeGlow;
+                ctx.fillRect(75, 45 + breathe, 15, 15);
+                ctx.fillRect(110, 45 + breathe, 15, 15);
+
+                ctx.fillStyle = '#FF0000';
+                ctx.fillRect(80, 50 + breathe, 5, 5);
+                ctx.fillRect(115, 50 + breathe, 5, 5);
+                ctx.globalAlpha = 1;
+
+                ctx.fillStyle = '#FF6600';
+                ctx.globalAlpha = 0.8;
+                const mouthOpen = Math.abs(Math.sin(game.bossAnimFrame * 2)) * 15;
+                ctx.fillRect(75, 60 + breathe, 50, 8);
+                ctx.fillRect(80, 68 + breathe, 40, mouthOpen);
+                ctx.globalAlpha = 1;
+
+                for(let i = 0; i < 5; i++) {
+                    const flamePhase = (game.bossAnimFrame * 3 + i * 0.7) % 1;
+                    if(flamePhase < 0.6) {
+                        const flameX = 50 + i * 25;
+                        const flameHeight = (1 - flamePhase / 0.6) * 30;
+                        const flameY = 60 + breathe - flameHeight;
+
+                        ctx.fillStyle = '#FF6600';
+                        ctx.globalAlpha = 0.8;
+                        ctx.fillRect(flameX, flameY, 12, flameHeight);
+
+                        ctx.fillStyle = '#FFAA00';
+                        ctx.fillRect(flameX + 2, flameY + 5, 8, flameHeight - 10);
+
+                        ctx.fillStyle = '#FFFF00';
+                        ctx.fillRect(flameX + 4, flameY + 10, 4, Math.max(0, flameHeight - 15));
+
+                        ctx.globalAlpha = 1;
+                    }
+                }
+
+                for(let i = 0; i < 8; i++) {
+                    const smokePhase = (game.bossAnimFrame + i * 0.3) % 2;
+                    const smokeX = 60 + i * 15 + Math.sin(smokePhase * Math.PI) * 10;
+                    const smokeY = 60 - smokePhase * 40;
+                    const smokeAlpha = Math.max(0, 1 - smokePhase / 2);
+
+                    ctx.fillStyle = '#4B0000';
+                    ctx.globalAlpha = smokeAlpha * 0.5;
+                    ctx.fillRect(smokeX, smokeY, 6, 6);
                     ctx.globalAlpha = 1;
                 }
             }
-
-            // Smoke/ash particles rising
-            for(let i = 0; i < 8; i++) {
-                const smokePhase = (game.bossAnimFrame + i * 0.3) % 2;
-                const smokeX = 60 + i * 15 + Math.sin(smokePhase * Math.PI) * 10;
-                const smokeY = 60 - smokePhase * 40;
-                const smokeAlpha = Math.max(0, 1 - smokePhase / 2);
-
-                ctx.fillStyle = '#4B0000';
-                ctx.globalAlpha = smokeAlpha * 0.5;
-                ctx.fillRect(smokeX, smokeY, 6, 6);
-                ctx.globalAlpha = 1;
-            }
             break;
+        }
+
+        case 'shadow': {
+            // Shadow Demon - completely redesigned as a multi-armed wraith
+            const bodyX = 100;
+            const bodyY = 140 + breathe;
+            const anim = game.bossAnimFrame;
+            const pulse = Math.sin(anim * 1.5) * 0.2 + 0.8;
+            const armWave = Math.sin(anim * 2);
+
+            ctx.save();
+            ctx.translate(bodyX, bodyY);
+
+            // Multiple shadow tendrils emanating from bottom
+            ctx.fillStyle = 'rgba(20, 20, 20, 0.6)';
+            for(let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const waveOffset = Math.sin(anim * 1.3 + i) * 15;
+                ctx.beginPath();
+                ctx.moveTo(0, 20);
+                ctx.quadraticCurveTo(
+                    Math.cos(angle) * 40,
+                    40 + waveOffset,
+                    Math.cos(angle) * 60,
+                    90 + waveOffset
+                );
+                ctx.lineTo(Math.cos(angle) * 55, 95 + waveOffset);
+                ctx.quadraticCurveTo(
+                    Math.cos(angle) * 35,
+                    45 + waveOffset,
+                    0, 25
+                );
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Main torso - jagged, angular shape
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.moveTo(-25, 20);
+            ctx.lineTo(-35, -10);
+            ctx.lineTo(-20, -40);
+            ctx.lineTo(0, -50);
+            ctx.lineTo(20, -40);
+            ctx.lineTo(35, -10);
+            ctx.lineTo(25, 20);
+            ctx.closePath();
+            ctx.fill();
+
+            // Inner core with pulsing dark energy
+            const coreGradient = ctx.createRadialGradient(0, -15, 5, 0, -15, 30);
+            coreGradient.addColorStop(0, `rgba(80, 80, 80, ${pulse})`);
+            coreGradient.addColorStop(1, 'rgba(30, 30, 30, 0)');
+            ctx.fillStyle = coreGradient;
+            ctx.beginPath();
+            ctx.arc(0, -15, 30, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Four demonic arms
+            const arms = [
+                { angle: -0.8, length: 70, side: -1 },
+                { angle: -0.3, length: 65, side: -1 },
+                { angle: 0.3, length: 65, side: 1 },
+                { angle: 0.8, length: 70, side: 1 }
+            ];
+
+            ctx.strokeStyle = '#2d2d2d';
+            ctx.lineWidth = 8;
+            for(let i = 0; i < arms.length; i++) {
+                const arm = arms[i];
+                const wave = Math.sin(anim * 2 + i * 0.5) * 0.3;
+
+                ctx.beginPath();
+                ctx.moveTo(arm.side * 25, -20);
+                const midX = arm.side * 50;
+                const midY = -10 + Math.sin(anim * 1.8 + i) * 15;
+                ctx.quadraticCurveTo(midX, midY,
+                    arm.side * 80, 10 + Math.sin(anim * 2.2 + i) * 20);
+                ctx.stroke();
+
+                // Clawed hands
+                ctx.fillStyle = '#3d3d3d';
+                const handX = arm.side * 80;
+                const handY = 10 + Math.sin(anim * 2.2 + i) * 20;
+                for(let c = 0; c < 3; c++) {
+                    ctx.beginPath();
+                    ctx.moveTo(handX + arm.side * c * 5, handY);
+                    ctx.lineTo(handX + arm.side * (c * 5 + 8), handY + 15);
+                    ctx.lineTo(handX + arm.side * (c * 5 + 5), handY + 15);
+                    ctx.lineTo(handX + arm.side * (c * 5 + 2), handY);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            // Skull-like head
+            ctx.fillStyle = '#2d2d2d';
+            ctx.beginPath();
+            ctx.ellipse(0, -60, 22, 25, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Demonic horns - curved upward
+            ctx.fillStyle = '#0a0612';
+            ctx.beginPath();
+            ctx.moveTo(-18, -75);
+            ctx.quadraticCurveTo(-35, -90, -30, -105);
+            ctx.lineTo(-25, -103);
+            ctx.quadraticCurveTo(-30, -88, -15, -73);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(18, -75);
+            ctx.quadraticCurveTo(35, -90, 30, -105);
+            ctx.lineTo(25, -103);
+            ctx.quadraticCurveTo(30, -88, 15, -73);
+            ctx.closePath();
+            ctx.fill();
+
+            // Glowing violet eyes
+            const eyeGlow = Math.sin(anim * 4) * 0.3 + 0.7;
+            ctx.fillStyle = `rgba(180, 180, 180, ${eyeGlow})`;
+            ctx.fillRect(-14, -65, 10, 12);
+            ctx.fillRect(4, -65, 10, 12);
+
+            // Eye glow aura
+            ctx.fillStyle = `rgba(180, 180, 180, ${eyeGlow * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(-9, -59, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(9, -59, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Jagged mouth
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(-10, -45);
+            for(let i = 0; i <= 5; i++) {
+                const x = -10 + i * 4;
+                const y = -45 + (i % 2 === 0 ? 0 : 5);
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(10, -45);
+            ctx.lineTo(10, -42);
+            ctx.lineTo(-10, -42);
+            ctx.closePath();
+            ctx.fill();
+
+            // Floating shadow particles
+            ctx.fillStyle = 'rgba(45, 45, 45, 0.7)';
+            for(let i = 0; i < 12; i++) {
+                const particleAngle = (anim * 0.8 + i * 0.5) % (Math.PI * 2);
+                const radius = 70 + Math.sin(anim * 2 + i) * 10;
+                const px = Math.cos(particleAngle) * radius;
+                const py = -30 + Math.sin(particleAngle) * radius * 0.8;
+                const pSize = 3 + Math.sin(anim * 3 + i) * 2;
+                ctx.globalAlpha = 0.4 + Math.sin(anim * 2 + i) * 0.3;
+                ctx.fillRect(px - pSize/2, py - pSize/2, pSize, pSize);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+            break;
+        }
+
+        case 'serpent': {
+            const segmentCount = 10;
+            const wavePhase = game.bossAnimFrame * 1.8;
+            const amplitude = 20 + Math.sin(game.bossAnimFrame * 1.1) * 6;
+            const baseX = 30;
+            const baseY = 150 + breathe;
+
+            const spine = [];
+            for(let i = 0; i < segmentCount; i++) {
+                const t = i / (segmentCount - 1);
+                const offsetX = t * 140;
+                const wave = Math.sin(wavePhase + t * Math.PI * 1.5);
+                const x = baseX + offsetX;
+                const y = baseY + wave * amplitude;
+                spine.push({ x, y, t });
+            }
+
+            // Energetická linka pod tělem
+            ctx.save();
+            ctx.strokeStyle = 'rgba(120, 235, 255, 0.28)';
+            ctx.lineWidth = 8;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(spine[0].x, spine[0].y);
+            for(let i = 1; i < spine.length; i++) {
+                ctx.lineTo(spine[i].x, spine[i].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+
+            // Krystalické segmenty
+            for(let i = spine.length - 1; i >= 0; i--) {
+                const { x, y, t } = spine[i];
+                const size = 26 - t * 10;
+                const tilt = Math.sin(wavePhase + t * Math.PI * 1.5 + i * 0.2) * 0.2;
+
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(tilt);
+
+                const gradient = ctx.createLinearGradient(-size, -size, size, size);
+                gradient.addColorStop(0, 'rgba(80, 220, 255, 0.9)');
+                gradient.addColorStop(0.35, 'rgba(140, 245, 255, 0.95)');
+                gradient.addColorStop(0.7, 'rgba(50, 170, 235, 0.85)');
+                gradient.addColorStop(1, 'rgba(20, 90, 160, 0.9)');
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(0, -size);
+                ctx.lineTo(size * 0.75, 0);
+                ctx.lineTo(0, size);
+                ctx.lineTo(-size * 0.75, 0);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(200, 255, 255, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.beginPath();
+                ctx.moveTo(0, -size + 4);
+                ctx.lineTo(size * 0.45, -2);
+                ctx.lineTo(0, 6);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            // Hlava
+            const head = spine[0];
+            ctx.save();
+            ctx.translate(head.x, head.y);
+            const headTilt = Math.sin(wavePhase) * 0.25;
+            ctx.rotate(headTilt);
+
+            const headLength = 36;
+            const headGradient = ctx.createLinearGradient(-headLength, -headLength, headLength, headLength);
+            headGradient.addColorStop(0, 'rgba(150, 255, 255, 0.95)');
+            headGradient.addColorStop(0.4, 'rgba(90, 210, 255, 0.95)');
+            headGradient.addColorStop(1, 'rgba(30, 110, 190, 0.9)');
+
+            ctx.fillStyle = headGradient;
+            ctx.beginPath();
+            ctx.moveTo(0, -headLength * 0.9);
+            ctx.lineTo(headLength * 0.9, -4);
+            ctx.lineTo(0, headLength * 0.9);
+            ctx.lineTo(-headLength * 0.75, -2);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(220, 255, 255, 0.7)';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // Oči
+            ctx.fillStyle = 'rgba(120, 200, 255, 0.95)';
+            const eyeOffsetY = -10;
+            ctx.beginPath();
+            ctx.ellipse(8, eyeOffsetY, 4, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(18, eyeOffsetY - 4, 4, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#0b1f3f';
+            ctx.beginPath();
+            ctx.arc(8, eyeOffsetY, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(18, eyeOffsetY - 4, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Záře očí
+            ctx.fillStyle = 'rgba(90, 220, 255, 0.6)';
+            ctx.beginPath();
+            ctx.arc(8, eyeOffsetY, 6 + Math.sin(game.bossAnimFrame * 4) * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(18, eyeOffsetY - 4, 6 + Math.cos(game.bossAnimFrame * 4) * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // Chvost: pár třpytivých částic
+            const tail = spine[spine.length - 1];
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            for(let i = 0; i < 3; i++) {
+                const sparklePhase = (wavePhase * 2 + i * 1.3) % (Math.PI * 2);
+                const sparkleX = tail.x + Math.cos(sparklePhase) * 12;
+                const sparkleY = tail.y + Math.sin(sparklePhase) * 12;
+                ctx.fillStyle = 'rgba(170, 240, 255, 0.6)';
+                ctx.beginPath();
+                ctx.arc(sparkleX, sparkleY, 3 + Math.sin(wavePhase + i) * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+
+            break;
+        }
+
+        case 'bird': {
+            const flap = Math.sin(game.bossAnimFrame * 3.2);
+            const bodyY = 140 + breathe;
+            const bodyX = 100;
+
+            ctx.save();
+            ctx.translate(bodyX, bodyY);
+            ctx.scale(-1, 1);
+
+            // Tělo a hlava
+            const bodyGradient = ctx.createRadialGradient(0, -20, 10, 0, 0, 80);
+            bodyGradient.addColorStop(0, '#3c4b6f');
+            bodyGradient.addColorStop(0.6, '#253550');
+            bodyGradient.addColorStop(1, '#121a29');
+            ctx.fillStyle = bodyGradient;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 42, 65, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#2c3d5c';
+            ctx.beginPath();
+            ctx.ellipse(0, -30, 26, 22, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Oči
+            ctx.fillStyle = '#ffd93b';
+            ctx.beginPath();
+            ctx.ellipse(-10, -34, 5, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(10, -34, 5, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#461f00';
+            ctx.beginPath();
+            ctx.arc(-10, -34, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(10, -34, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Zobák
+            ctx.fillStyle = '#ffb347';
+            ctx.beginPath();
+            ctx.moveTo(0, -28);
+            ctx.lineTo(20, -22 + flap * 2);
+            ctx.lineTo(0, -14);
+            ctx.closePath();
+            ctx.fill();
+
+            // Křídla
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = '#314666';
+            for(const dir of [-1, 1]) {
+                ctx.save();
+                ctx.scale(dir, 1);
+                ctx.rotate(flap * 0.35 + dir * 0.12);
+                ctx.beginPath();
+                ctx.moveTo(-10, -10);
+                ctx.quadraticCurveTo(-110, -40, -140, 20);
+                ctx.quadraticCurveTo(-90, 50, -20, 30);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+            ctx.restore();
+
+            // Drápy
+            ctx.fillStyle = '#ffb347';
+            for(const offset of [-18, 18]) {
+                ctx.beginPath();
+                ctx.moveTo(offset, 70);
+                ctx.lineTo(offset + 6, 90);
+                ctx.lineTo(offset - 6, 90);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            ctx.restore();
+
+            // Blesky kolem ptáka
+            const lightningAnchors = [
+                { x: bodyX - 80, y: bodyY - 40 },
+                { x: bodyX + 90, y: bodyY - 20 },
+                { x: bodyX - 70, y: bodyY + 60 },
+                { x: bodyX + 80, y: bodyY + 70 }
+            ];
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for(let i = 0; i < lightningAnchors.length; i++) {
+                const anchor = lightningAnchors[i];
+                const targetX = bodyX + Math.sin(game.bossAnimFrame * 2 + i) * 20;
+                const targetY = bodyY + Math.cos(game.bossAnimFrame * 1.8 + i) * 25 - 10;
+                const segments = 5;
+
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = 'rgba(255, 255, 140, 0.85)';
+                ctx.beginPath();
+                ctx.moveTo(anchor.x, anchor.y);
+                for(let s = 1; s <= segments; s++) {
+                    const t = s / segments;
+                    const jitterX = (Math.random() - 0.5) * 14;
+                    const jitterY = (Math.random() - 0.5) * 14;
+                    const x = anchor.x + (targetX - anchor.x) * t + jitterX;
+                    const y = anchor.y + (targetY - anchor.y) * t + jitterY;
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(150, 220, 255, 0.8)';
+                ctx.beginPath();
+                ctx.moveTo(anchor.x, anchor.y);
+                for(let s = 1; s <= segments; s++) {
+                    const t = s / segments;
+                    const jitterX = (Math.random() - 0.5) * 10;
+                    const jitterY = (Math.random() - 0.5) * 10;
+                    const x = anchor.x + (targetX - anchor.x) * t + jitterX;
+                    const y = anchor.y + (targetY - anchor.y) * t + jitterY;
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            break;
+        }
+
+        case 'necro': {
+            // Necromancer - Kingdom of Death boss
+            const float = Math.sin(game.bossAnimFrame * 1.5) * 8;
+            const cloakWave = Math.sin(game.bossAnimFrame * 2) * 6;
+            const staffPulse = Math.sin(game.bossAnimFrame * 3) * 0.3 + 0.7;
+
+            // Floating cloak base
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.moveTo(100, 80 + float);
+            ctx.lineTo(60 + cloakWave, 200);
+            ctx.lineTo(140 - cloakWave, 200);
+            ctx.closePath();
+            ctx.fill();
+
+            // Inner cloak (purple)
+            ctx.fillStyle = '#4a148c';
+            ctx.beginPath();
+            ctx.moveTo(100, 90 + float);
+            ctx.lineTo(75 + cloakWave * 0.7, 190);
+            ctx.lineTo(125 - cloakWave * 0.7, 190);
+            ctx.closePath();
+            ctx.fill();
+
+            // Skeletal body
+            ctx.fillStyle = '#d0d0d0';
+            ctx.fillRect(85, 100 + float, 30, 40);
+
+            // Ribs detail
+            ctx.strokeStyle = '#a0a0a0';
+            ctx.lineWidth = 2;
+            for(let i = 0; i < 4; i++) {
+                ctx.beginPath();
+                ctx.moveTo(85, 110 + float + i * 8);
+                ctx.lineTo(115, 110 + float + i * 8);
+                ctx.stroke();
+            }
+
+            // Hood
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.moveTo(100, 60 + float);
+            ctx.lineTo(70, 100 + float);
+            ctx.lineTo(100, 95 + float);
+            ctx.lineTo(130, 100 + float);
+            ctx.closePath();
+            ctx.fill();
+
+            // Skull face
+            ctx.fillStyle = '#e0e0e0';
+            ctx.fillRect(88, 75 + float, 24, 20);
+
+            // Eye sockets (glowing green)
+            ctx.fillStyle = '#00ff88';
+            const eyeGlow = staffPulse;
+            ctx.globalAlpha = eyeGlow;
+            ctx.fillRect(92, 82 + float, 6, 8);
+            ctx.fillRect(102, 82 + float, 6, 8);
+            ctx.globalAlpha = 1;
+
+            // Dark eye sockets
+            ctx.fillStyle = '#000';
+            ctx.fillRect(94, 84 + float, 4, 6);
+            ctx.fillRect(104, 84 + float, 4, 6);
+
+            // Necromancer staff
+            ctx.strokeStyle = '#4a2511';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(120, 120 + float);
+            ctx.lineTo(145, 180);
+            ctx.stroke();
+
+            // Skull on staff
+            ctx.fillStyle = '#d0d0d0';
+            ctx.fillRect(138, 165, 14, 12);
+            ctx.fillStyle = '#00ff88';
+            ctx.globalAlpha = staffPulse;
+            ctx.fillRect(140, 169, 4, 4);
+            ctx.fillRect(146, 169, 4, 4);
+            ctx.globalAlpha = 1;
+
+            // Orbiting skulls
+            for(let i = 0; i < 3; i++) {
+                const angle = game.bossAnimFrame * 1.2 + (i * Math.PI * 2 / 3);
+                const orbitRadius = 60;
+                const skullX = 100 + Math.cos(angle) * orbitRadius;
+                const skullY = 130 + float + Math.sin(angle) * orbitRadius;
+
+                ctx.fillStyle = '#8b4789';
+                ctx.fillRect(skullX - 6, skullY - 6, 12, 12);
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(skullX - 4, skullY - 3, 3, 3);
+                ctx.fillRect(skullX + 1, skullY - 3, 3, 3);
+            }
+
+            // Magical particles rising
+            ctx.fillStyle = '#9b59b6';
+            for(let i = 0; i < 8; i++) {
+                const particleY = 200 - ((game.bossAnimFrame * 2 + i * 20) % 150);
+                const particleX = 80 + i * 10 + Math.sin(game.bossAnimFrame + i) * 5;
+                ctx.globalAlpha = 1 - (particleY / 200);
+                ctx.fillRect(particleX, particleY, 4, 4);
+            }
+            ctx.globalAlpha = 1;
+
+            break;
+        }
+
+        case 'darkdragon': {
+            // Dark Dragon - Dragon's Lair boss (darkest colors)
+            const dragonX = 100;
+            const dragonY = 140 + breathe;
+            const anim = game.bossAnimFrame;
+            const wingFlap = Math.sin(anim * 2.5) * 0.4;
+            const tailSwing = Math.sin(anim * 1.3);
+
+            ctx.save();
+            ctx.translate(dragonX, dragonY);
+
+            // Serpentine tail with spikes (very dark purple-black)
+            ctx.strokeStyle = '#1a0533';
+            ctx.lineWidth = 18;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-25, 15);
+            for(let i = 1; i <= 7; i++) {
+                const t = i / 7;
+                const x = -25 - t * 90;
+                const y = 15 + Math.sin(anim * 1.3 + t * Math.PI * 2) * 25 + t * 30;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Tail spikes (pure black)
+            ctx.fillStyle = '#000000';
+            for(let i = 1; i <= 6; i++) {
+                const t = i / 7;
+                const x = -25 - t * 90;
+                const y = 15 + Math.sin(anim * 1.3 + t * Math.PI * 2) * 25 + t * 30;
+                ctx.beginPath();
+                ctx.moveTo(x, y - 12);
+                ctx.lineTo(x + 5, y - 25);
+                ctx.lineTo(x + 10, y - 12);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Main body (very dark gradient - almost black)
+            const bodyGradient = ctx.createRadialGradient(0, -10, 10, 0, 30, 80);
+            bodyGradient.addColorStop(0, '#2a0845');
+            bodyGradient.addColorStop(0.5, '#150420');
+            bodyGradient.addColorStop(1, '#000000');
+            ctx.fillStyle = bodyGradient;
+            ctx.beginPath();
+            ctx.ellipse(0, 25, 50, 65, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Scale texture (very dark purple)
+            ctx.fillStyle = 'rgba(42, 8, 69, 0.5)';
+            for(let i = 0; i < 6; i++) {
+                for(let j = 0; j < 4; j++) {
+                    const scaleX = -30 + j * 15 + (i % 2) * 7;
+                    const scaleY = 0 + i * 12 + Math.sin(anim + i) * 2;
+                    ctx.beginPath();
+                    ctx.arc(scaleX, scaleY, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Wings (pitch black with subtle purple)
+            ctx.fillStyle = '#0d0015';
+            for(const dir of [-1, 1]) {
+                ctx.save();
+                ctx.scale(dir, 1);
+                ctx.rotate(wingFlap + dir * 0.2);
+
+                // Wing membrane
+                ctx.beginPath();
+                ctx.moveTo(-15, -15);
+                ctx.quadraticCurveTo(-100, -80, -140, -20);
+                ctx.quadraticCurveTo(-130, 30, -40, 25);
+                ctx.closePath();
+                ctx.fill();
+
+                // Wing bones (pure black)
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-15, -15);
+                ctx.lineTo(-80, -60);
+                ctx.moveTo(-15, -15);
+                ctx.lineTo(-100, -30);
+                ctx.moveTo(-15, -15);
+                ctx.lineTo(-90, 5);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            // Neck
+            ctx.fillStyle = '#1a0533';
+            ctx.beginPath();
+            ctx.moveTo(-10, -20);
+            ctx.lineTo(-5, -60);
+            ctx.lineTo(15, -60);
+            ctx.lineTo(10, -20);
+            ctx.closePath();
+            ctx.fill();
+
+            // Head
+            ctx.fillStyle = '#2a0845';
+            ctx.beginPath();
+            ctx.ellipse(0, -70, 28, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Horns (pure black)
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(-20, -75);
+            ctx.lineTo(-28, -100);
+            ctx.lineTo(-15, -78);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(20, -75);
+            ctx.lineTo(28, -100);
+            ctx.lineTo(15, -78);
+            ctx.closePath();
+            ctx.fill();
+
+            // Snout
+            ctx.fillStyle = '#1a0533';
+            ctx.fillRect(-5, -65, 18, 12);
+            ctx.fillRect(0, -58, 20, 8);
+
+            // Nostrils (dark green poison smoke)
+            const smokePhase = Math.sin(anim * 4);
+            if(smokePhase > 0) {
+                ctx.fillStyle = `rgba(15, 50, 20, ${smokePhase * 0.7})`;
+                for(let i = 0; i < 4; i++) {
+                    const smokeX = 15 + i * 8;
+                    const smokeY = -60 - i * 10;
+                    const size = 8 + i * 3;
+                    ctx.beginPath();
+                    ctx.arc(smokeX, smokeY, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Eyes (glowing deep purple)
+            ctx.fillStyle = '#4a148c';
+            ctx.fillRect(-18, -75, 8, 10);
+            ctx.fillRect(10, -75, 8, 10);
+
+            // Eye glow (darker purple glow)
+            const eyeGlow = Math.sin(anim * 3) * 0.3 + 0.7;
+            ctx.fillStyle = `rgba(74, 20, 140, ${eyeGlow})`;
+            ctx.fillRect(-16, -73, 4, 6);
+            ctx.fillRect(12, -73, 4, 6);
+
+            // Poison drips (dark green)
+            ctx.fillStyle = '#0d2912';
+            for(let i = 0; i < 3; i++) {
+                const dripY = -50 + ((anim * 3 + i * 30) % 100);
+                const dripX = 10 + i * 8;
+                ctx.globalAlpha = 1 - (dripY / 100);
+                ctx.fillRect(dripX, dripY, 3, 8);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+            break;
+        }
 
         default:
             // Generic large monster
@@ -3338,19 +4794,6 @@ function drawBoss(boss, x, y, scale = 1) {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.strokeRect(x, healthBarY, healthBarWidth, 20);
-
-    // Hearts
-    for(let i = 0; i < 5; i++) {
-        const heartX = x + 10 + i * 36;
-        const heartY = healthBarY + 10;
-
-        if(i < game.bossHealth) {
-            ctx.fillStyle = '#ff0000';
-            ctx.fillRect(heartX - 5, heartY - 3, 4, 4);
-            ctx.fillRect(heartX + 1, heartY - 3, 4, 4);
-            ctx.fillRect(heartX - 6, heartY + 1, 12, 6);
-        }
-    }
 
     // Boss name
     ctx.fillStyle = '#fff';
@@ -3480,6 +4923,35 @@ function updateShockwaves() {
 }
 
 // Show stage announcement
+function getTotalStages() {
+    if(typeof QuestionBank !== 'undefined' && QuestionBank && typeof QuestionBank.getStageCount === 'function') {
+        const total = QuestionBank.getStageCount(game.selectedGrade);
+        if(typeof total === 'number' && total > 0) {
+            return total;
+        }
+
+        const fallback = QuestionBank.getStageCount(null);
+        if(typeof fallback === 'number' && fallback > 0) {
+            return fallback;
+        }
+    }
+    return 1;
+}
+
+function getStageNameForDisplay(stageNumber) {
+    if(typeof QuestionBank !== 'undefined' && QuestionBank && typeof QuestionBank.getStageName === 'function') {
+        const preferred = QuestionBank.getStageName(game.selectedGrade, stageNumber);
+        if(preferred) {
+            return preferred;
+        }
+        const fallback = QuestionBank.getStageName(null, stageNumber);
+        if(fallback) {
+            return fallback;
+        }
+    }
+    return `Kolo ${stageNumber}`;
+}
+
 function showStageAnnouncement(stageNum) {
     game.stageAnnouncement = {
         stage: stageNum,
@@ -3496,165 +4968,6 @@ function showStageAnnouncement(stageNum) {
     }, 2000);
 }
 
-function buildQuestionForStage(stage) {
-    switch(stage) {
-        case 1: {
-            const a = randInt(0, 10);
-            const b = randInt(0, 10 - a);
-            const sum = a + b;
-            return {
-                questionText: `${a} + ${b} = ?`,
-                correctAnswer: sum,
-                operands: [a, b],
-                answerRangeMax: 10,
-                key: `1|${a}|${b}`
-            };
-        }
-        case 2: {
-            const a = randInt(0, 10);
-            const b = randInt(0, a);
-            const diff = a - b;
-            return {
-                questionText: `${a} - ${b} = ?`,
-                correctAnswer: diff,
-                operands: [a, b],
-                answerRangeMax: 10,
-                key: `2|${a}|${b}`
-            };
-        }
-        case 3: {
-            const a = randInt(0, 10);
-            const missing = randInt(0, 10 - a);
-            const b = missing + a;
-            return {
-                questionText: `? + ${a} = ${b}`,
-                correctAnswer: missing,
-                operands: [a, b],
-                answerRangeMax: 10,
-                key: `3|${a}|${b}`
-            };
-        }
-        case 4: {
-            const a = randInt(0, 10);
-            const missing = randInt(0, a);
-            const b = a - missing;
-            return {
-                questionText: `${a} - ? = ${b}`,
-                correctAnswer: missing,
-                operands: [a, b],
-                answerRangeMax: 10,
-                key: `4|${a}|${b}`
-            };
-        }
-        case 5: {
-            const a = randInt(0, 20);
-            const b = randInt(0, 20 - a);
-            const sum = a + b;
-            return {
-                questionText: `${a} + ${b} = ?`,
-                correctAnswer: sum,
-                operands: [a, b],
-                answerRangeMax: 20,
-                key: `5|${a}|${b}`
-            };
-        }
-        case 6: {
-            const a = randInt(0, 20);
-            const b = randInt(0, a);
-            const diff = a - b;
-            return {
-                questionText: `${a} - ${b} = ?`,
-                correctAnswer: diff,
-                operands: [a, b],
-                answerRangeMax: 20,
-                key: `6|${a}|${b}`
-            };
-        }
-        case 7: {
-            const maxTotal = 10;
-            const a = randInt(0, maxTotal);
-            const remainingAfterA = maxTotal - a;
-            const b = randInt(0, remainingAfterA);
-            const c = randInt(0, maxTotal - a - b);
-            const sum = a + b + c;
-            return {
-                questionText: `${a} + ${b} + ${c} = ?`,
-                correctAnswer: sum,
-                operands: [a, b, c],
-                answerRangeMax: 10,
-                key: `7|${a}|${b}|${c}`
-            };
-        }
-        case 8: {
-            const maxTotal = 20;
-            const a = randInt(0, maxTotal);
-            const remainingAfterA = maxTotal - a;
-            const b = randInt(0, remainingAfterA);
-            const c = randInt(0, maxTotal - a - b);
-            const sum = a + b + c;
-            return {
-                questionText: `${a} + ${b} + ${c} = ?`,
-                correctAnswer: sum,
-                operands: [a, b, c],
-                answerRangeMax: 20,
-                key: `8|${a}|${b}|${c}`
-            };
-        }
-        case 9: {
-            const a = randInt(0, 30);
-            const b = randInt(0, 30 - a);
-            const sum = a + b;
-            return {
-                questionText: `${a} + ${b} = ?`,
-                correctAnswer: sum,
-                operands: [a, b],
-                answerRangeMax: 30,
-                key: `9|${a}|${b}`
-            };
-        }
-        case 10:
-        default: {
-            const a = randInt(0, 30);
-            const b = randInt(0, a);
-            const diff = a - b;
-            return {
-                questionText: `${a} - ${b} = ?`,
-                correctAnswer: diff,
-                operands: [a, b],
-                answerRangeMax: 30,
-                key: `10|${a}|${b}`
-            };
-        }
-    }
-}
-
-function determineOperationType(stage, questionData) {
-    const operands = questionData.operands || [];
-
-    if((stage === 1 || stage === 5 || stage === 9) && operands.length >= 2) {
-        if(operands[0] === operands[1]) {
-            return 'double-add';
-        }
-        return null;
-    }
-
-    if((stage === 2 || stage === 6 || stage === 10) && operands.length >= 2) {
-        if(operands[0] === operands[1]) {
-            return 'double-sub';
-        }
-        return null;
-    }
-
-    if((stage === 7 || stage === 8) && operands.length === 3) {
-        if(operands[0] === operands[1] && operands[1] === operands[2]) {
-            return 'triple-add';
-        }
-        return null;
-    }
-
-    return null;
-}
-
 // Generate math problem
 function generateProblem() {
     clearAnswerLock();
@@ -3668,65 +4981,86 @@ function generateProblem() {
 
     do {
         attempts++;
-        questionData = buildQuestionForStage(game.stage);
+        questionData = QuestionBank.generateQuestion(game.selectedGrade, game.stage) ||
+            QuestionBank.generateQuestion(null, game.stage);
 
-        const operandsUsedRecently = game.recentOperands.some(previous =>
-            previous.some(value => questionData.operands.includes(value))
+        if(!questionData) {
+            break;
+        }
+
+        const operands = Array.isArray(questionData.operands) ? questionData.operands : [];
+        const operandsUsedRecently = operands.length > 0 && game.recentOperands.some(previous =>
+            previous.some(value => operands.includes(value))
         );
 
-        const operationType = determineOperationType(game.stage, questionData);
+        const operationType = questionData.operationType || null;
         const answerRepeats = questionData.correctAnswer === game.lastCorrectAnswer;
         const operationRepeats = operationType && operationType === game.lastOperationType;
-        const problemRepeated = game.recentProblems.includes(questionData.key);
+        const problemKey = questionData.key || `${game.stage}|${questionData.questionText}|${questionData.correctAnswer}`;
+        const problemRepeated = game.recentProblems.includes(problemKey);
 
         if(problemRepeated || operandsUsedRecently || answerRepeats || operationRepeats) {
             if(attempts >= maxAttempts) {
-                selectedOperationType = operationType || null;
+                selectedOperationType = operationType;
+                questionData.key = problemKey;
                 shouldRecordProblem = true;
                 break;
             }
             continue;
         }
-        selectedOperationType = operationType || null;
+        questionData.key = problemKey;
+        selectedOperationType = operationType;
         shouldRecordProblem = true;
         break;
     } while(attempts < maxAttempts);
 
-    if(shouldRecordProblem) {
+    if(questionData && shouldRecordProblem) {
         game.recentProblems.push(questionData.key);
         if(game.recentProblems.length > 3) {
             game.recentProblems.shift();
         }
 
-        game.recentOperands.push([...questionData.operands]);
-        if(game.recentOperands.length > 3) {
-            game.recentOperands.shift();
+        if(Array.isArray(questionData.operands) && questionData.operands.length > 0) {
+            game.recentOperands.push([...questionData.operands]);
+            if(game.recentOperands.length > 3) {
+                game.recentOperands.shift();
+            }
         }
     }
 
-    const answersSet = new Set([questionData.correctAnswer]);
-    while(answersSet.size < 5) {
-        const wrong = randInt(0, questionData.answerRangeMax);
+    const safeQuestionData = questionData || {
+        questionText: '0 + 0 = ?',
+        correctAnswer: 0,
+        answerRangeMax: 10
+    };
+
+    const answerRangeMax = typeof safeQuestionData.answerRangeMax === 'number'
+        ? Math.max(1, safeQuestionData.answerRangeMax)
+        : 30;
+
+    const answersSet = new Set([safeQuestionData.correctAnswer]);
+    while(answersSet.size < 6) {
+        const wrong = randInt(0, answerRangeMax);
         if(!answersSet.has(wrong)) {
             answersSet.add(wrong);
         }
     }
 
     const answers = Array.from(answersSet);
-    shuffleArray(answers);
+    answers.sort((a, b) => a - b);
 
     game.currentQuestion = {
-        questionText: questionData.questionText,
-        correctAnswer: questionData.correctAnswer,
+        questionText: safeQuestionData.questionText,
+        correctAnswer: safeQuestionData.correctAnswer,
         answers
     };
 
-    game.lastCorrectAnswer = questionData.correctAnswer;
+    game.lastCorrectAnswer = safeQuestionData.correctAnswer;
     game.lastOperationType = selectedOperationType;
 
     game.startTime = Date.now();
 
-    document.getElementById('question').textContent = questionData.questionText;
+    document.getElementById('question').textContent = safeQuestionData.questionText;
     const container = document.getElementById('answersContainer');
     container.innerHTML = '';
 
@@ -3779,39 +5113,72 @@ function checkAnswer(answer) {
 
 // Cast spell effect
 function castSpell(isMiss = false) {
-    let targetX, targetY;
+    let initialTargetX;
+    let initialTargetY;
+
+    const baseTargetX = game.isBossFight ? game.bossX + BOSS_SPELL_TARGET_X_OFFSET : game.monsterX + 30;
+    const baseTargetY = MONSTER_SPELL_TARGET_Y;
+
+    let missTargetX = null;
+    let missTargetY = null;
 
     if(isMiss) {
         // Wrong answer - spell misses with dramatic angle
-        const baseTargetX = game.isBossFight ? game.bossX + BOSS_SPELL_TARGET_X_OFFSET : game.monsterX + 30;
-        const baseTargetY = 200;
-
-        // Random offset: strongly up or down to ensure miss
         const offsetX = (Math.random() - 0.5) * 200; // ±100px horizontally
         const offsetY = Math.random() < 0.5 ? -(150 + Math.random() * 100) : (150 + Math.random() * 100); // ±150-250px vertically
 
-        targetX = baseTargetX + offsetX;
-        targetY = baseTargetY + offsetY;
+        missTargetX = baseTargetX + offsetX;
+        missTargetY = baseTargetY + offsetY;
+
+        initialTargetX = missTargetX;
+        initialTargetY = missTargetY;
+    } else {
+        initialTargetX = baseTargetX;
+        initialTargetY = baseTargetY;
     }
+
+    const originX = 140;
+    const originY = 150;
+    const estimatedDistance = Math.hypot(initialTargetX - originX, initialTargetY - originY) || 1;
+    let targetX = initialTargetX;
+    let targetY = initialTargetY;
 
     game.spellEffect = {
         x: 140,
         y: 150,
-        originX: 140,
-        originY: 150,
+        originX,
+        originY,
         alpha: 1,
         color: '#ffd700',
         hasHit: false,
         isMiss: isMiss,
-        missTargetX: targetX,
-        missTargetY: targetY,
+        missTargetX,
+        missTargetY,
         phase: 'charge',
         startTime: Date.now(),
         chargeDuration: 200,
         chargeProgress: 0,
         radius: 2,
         maxRadius: 14,
-        trail: []
+        trail: [],
+        trailMaxLength: 12,
+        renderX: originX,
+        renderY: originY,
+        prevRenderX: originX,
+        prevRenderY: originY,
+        renderAngle: 0,
+        hue: 210 + Math.random() * 60,
+        hueSpeed: 4 + Math.random() * 1.5,
+        waveBase: isMiss ? 6 : 10,
+        waveBoost: isMiss ? 4 : 14,
+        wavePhase: Math.random() * Math.PI * 2,
+        waveSpeed: 0.25 + Math.random() * 0.15,
+        travelDistance: 0,
+        estimatedDistance,
+        exhaust: [],
+        exhaustTimer: 0,
+        sparkleTimer: 0,
+        sparkles: []
     };
 
     const spellInterval = setInterval(() => {
@@ -3826,6 +5193,8 @@ function castSpell(isMiss = false) {
         if(effect.phase === 'charge') {
             const elapsed = now - effect.startTime;
             effect.chargeProgress = clamp01(elapsed / effect.chargeDuration);
+            effect.hue = (effect.hue + effect.hueSpeed * 0.6) % 360;
+            effect.wavePhase += effect.waveSpeed * 0.4;
 
             if(elapsed < effect.chargeDuration) {
                 return;
@@ -3861,19 +5230,96 @@ function castSpell(isMiss = false) {
 
         const dx = effect.x - previousX;
         const dy = effect.y - previousY;
+        const moveDistance = Math.hypot(dx, dy);
         if(dx !== 0 || dy !== 0) {
             effect.directionAngle = Math.atan2(dy, dx);
         }
 
-        effect.radius += (effect.maxRadius - effect.radius) * 0.25;
+        effect.travelDistance += moveDistance;
+
+        const toTargetX = targetX - effect.x;
+        const toTargetY = targetY - effect.y;
+        const distanceToTarget = Math.hypot(toTargetX, toTargetY);
+        const normX = distanceToTarget ? toTargetX / distanceToTarget : Math.cos(effect.directionAngle || 0);
+        const normY = distanceToTarget ? toTargetY / distanceToTarget : Math.sin(effect.directionAngle || 0);
+
+        const previousRenderX = effect.renderX;
+        const previousRenderY = effect.renderY;
+        effect.renderX = effect.x;
+        effect.renderY = effect.y;
+
+        const renderDx = effect.renderX - previousRenderX;
+        const renderDy = effect.renderY - previousRenderY;
+        if(renderDx !== 0 || renderDy !== 0) {
+            effect.renderAngle = Math.atan2(renderDy, renderDx);
+        }
+        effect.prevRenderX = effect.renderX;
+        effect.prevRenderY = effect.renderY;
+
+        effect.radius += (effect.maxRadius - effect.radius) * 0.22;
+        effect.hue = (effect.hue + effect.hueSpeed) % 360;
+
         effect.trail.unshift({
-            x: effect.x,
-            y: effect.y,
+            x: effect.renderX,
+            y: effect.renderY,
             radius: effect.radius,
-            alpha: 0.6
+            alpha: 0.65,
+            hue: effect.hue
         });
-        if(effect.trail.length > 6) {
+        if(effect.trail.length > effect.trailMaxLength) {
             effect.trail.pop();
+        }
+
+        effect.sparkleTimer += moveDistance;
+        if(effect.sparkleTimer > 18) {
+            effect.sparkleTimer = 0;
+            effect.sparkles.push({
+                x: effect.renderX + (Math.random() - 0.5) * 24,
+                y: effect.renderY + (Math.random() - 0.5) * 24,
+                life: 1,
+                hue: (effect.hue + 40) % 360,
+                size: effect.radius * (0.4 + Math.random() * 0.4)
+            });
+        }
+
+        for(let i = effect.sparkles.length - 1; i >= 0; i--) {
+            const sparkle = effect.sparkles[i];
+            sparkle.life -= 0.08;
+            sparkle.x += (Math.random() - 0.5) * 1.2;
+            sparkle.y += (Math.random() - 0.5) * 1.2;
+            if(sparkle.life <= 0) {
+                effect.sparkles.splice(i, 1);
+            }
+        }
+
+        effect.exhaustTimer += moveDistance;
+        if(effect.exhaustTimer > 6) {
+            effect.exhaustTimer = 0;
+            const swirlAngle = (effect.renderAngle || effect.directionAngle || 0) + (Math.random() - 0.5) * 0.8;
+            const speed = -2.2 - Math.random() * 1.4;
+            effect.exhaust.unshift({
+                x: effect.renderX,
+                y: effect.renderY,
+                vx: Math.cos(swirlAngle) * speed,
+                vy: Math.sin(swirlAngle) * speed,
+                radius: effect.radius * (1.2 + Math.random() * 0.4),
+                life: 1,
+                hue: effect.hue
+            });
+        }
+
+        for(let i = effect.exhaust.length - 1; i >= 0; i--) {
+            const puff = effect.exhaust[i];
+            puff.x += puff.vx;
+            puff.y += puff.vy;
+            puff.vx *= 0.94;
+            puff.vy *= 0.94;
+            puff.radius *= 1.06;
+            puff.life -= 0.07;
+            puff.hue = (puff.hue + 1.5) % 360;
+            if(puff.life <= 0.05) {
+                effect.exhaust.splice(i, 1);
+            }
         }
 
         // Check if spell hit target
@@ -3961,10 +5407,11 @@ function castSpell(isMiss = false) {
                                 updateScore();
                             }
 
+                            const totalStages = getTotalStages();
                             const nextStage = game.stage + 1;
-                            const completedGame = nextStage > TOTAL_STAGES;
+                            const completedGame = nextStage > totalStages;
 
-                            game.stage = Math.min(nextStage, TOTAL_STAGES);
+                            game.stage = Math.min(nextStage, totalStages);
                             game.questionsInStage = 0;
 
                             if(completedGame) {
@@ -3983,6 +5430,7 @@ function castSpell(isMiss = false) {
                             game.bossX = 800;
                             resetMonsterCycle(game.stage);
                             game.currentMonster = getNextMonsterForStage(game.stage);
+                            game.monsterHitFlash = 0;
                             game.nextFireballTime = null;
 
                             // Show stage announcement, then generate problem
@@ -4012,6 +5460,7 @@ function castSpell(isMiss = false) {
                     }
                 } else {
                     // Start inflation animation when spell hits normal monster
+                    game.monsterHitFlash = 1;
                     game.explosion = {
                         startTime: Date.now(),
                         duration: 600,
@@ -4032,8 +5481,11 @@ function updateScore() {
     document.getElementById('correct').textContent = game.correct;
 }
 
-function showFinalResults({ title = 'GAME OVER!', message = '' } = {}) {
+function showFinalResults({ title = 'Konec hry', message = '' } = {}) {
     game.stageAnnouncement = null;
+    game.isPausedForModal = true;
+    const gradeValue = typeof game.selectedGrade === 'number' ? game.selectedGrade : GRADE_SLIDER_MIN;
+    updateGameOverBackground(computeGradeGradientColors(gradeValue));
 
     const finalTitleEl = document.getElementById('finalTitle');
     if(finalTitleEl) {
@@ -4058,6 +5510,10 @@ function showFinalResults({ title = 'GAME OVER!', message = '' } = {}) {
     document.getElementById('finalCorrect').textContent = game.correct;
     document.getElementById('speedBonus').textContent = speedBonus;
     document.getElementById('finalStage').textContent = game.stage;
+    const finalGradeEl = document.getElementById('finalGrade');
+    if(finalGradeEl) {
+        finalGradeEl.textContent = getGradeLabel(gradeValue);
+    }
 
     document.getElementById('gameOverOverlay').style.display = 'block';
     document.getElementById('gameOver').style.display = 'block';
@@ -4072,8 +5528,8 @@ function showVictoryScreen() {
     game.nextFireballTime = null;
     game.witchShield = null;
     showFinalResults({
-        title: 'YOU WON!',
-        message: 'You completed all 10 stages!'
+        title: 'Výhra!',
+        message: 'Dokončil jsi všech 10 kol!'
     });
 }
 
@@ -4114,8 +5570,16 @@ function gameOver() {
     }, 800);
 }
 
-// Restart game
-document.getElementById('restartBtn').onclick = function() {
+function hideGameOverDialog() {
+    if(gameOverOverlay) {
+        gameOverOverlay.style.display = 'none';
+    }
+    if(gameOverDialog) {
+        gameOverDialog.style.display = 'none';
+    }
+}
+
+function resetGameStateForNewRun() {
     clearAnswerLock();
     game.wrongAttemptCount = 0;
     setAnswerButtonsDisabled(false);
@@ -4153,25 +5617,29 @@ document.getElementById('restartBtn').onclick = function() {
     game.recentOperands = [];
     game.lastCorrectAnswer = null;
     game.lastOperationType = null;
+    game.pendingScore = 0;
     game.nextFireballTime = null;
     game.witchShield = null;
     game.monsterVisualY = 180;
+    game.witchDeathAnim = null;
+    game.isPausedForModal = false;
+    game.monsterHitFlash = 0;
+
     initBats();
     initSeagulls();
     refreshEnvironment(game.timeState, { regenerateClouds: true });
 
-    document.getElementById('gameOverOverlay').style.display = 'none';
-    document.getElementById('gameOver').style.display = 'none';
     updateScore();
 
     resetMonsterCycle();
     game.currentMonster = getNextMonsterForStage(game.stage);
+    game.monsterHitFlash = 0;
     showStageAnnouncement(game.stage);
-};
+}
 
 // Draw parallax background
 function drawBackground() {
-    if(!game.isGameOver) {
+    if(!game.isGameOver && !game.isPausedForModal) {
         game.celestialProgress += 0.0005;
         if(game.celestialProgress > 1) game.celestialProgress = 0;
     }
@@ -4465,7 +5933,7 @@ function drawBackground() {
 
     drawForegroundAccents(themeName, palette, game.parallax.bushes % 120);
 
-    const stageY = 375;
+    const stageY = 377;
     const startX = (canvas.width - (10 * 30)) / 2;
 
     for(let i = 1; i <= 10; i++) {
@@ -4516,15 +5984,47 @@ function drawBackground() {
 }
 
 // Main game loop
-function gameLoop() {
+function gameLoop(timestamp) {
+    const now = typeof timestamp === 'number' ? timestamp : (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    // Calculate FPS
+    if(debugFPS) {
+        fpsFrameTimes.push(now);
+        // Keep only last 60 frame times
+        if(fpsFrameTimes.length > 60) {
+            fpsFrameTimes.shift();
+        }
+        // Calculate FPS from frame times
+        if(fpsFrameTimes.length >= 2) {
+            const totalTime = fpsFrameTimes[fpsFrameTimes.length - 1] - fpsFrameTimes[0];
+            const frameCount = fpsFrameTimes.length - 1;
+            currentFPS = Math.round((frameCount / totalTime) * 1000);
+        }
+    }
+
+    if(debugSlow) {
+        const frameInterval = 1000 / DEBUG_SLOW_FPS;
+        if(now - lastDebugFrameTime < frameInterval) {
+            requestAnimationFrame(gameLoop);
+            return;
+        }
+        lastDebugFrameTime = now;
+    } else if(lastDebugFrameTime !== 0) {
+        lastDebugFrameTime = 0;
+    }
+
+    const paused = !!game.isPausedForModal;
+
     // Apply screen shake
     ctx.save();
-    if(game.screenShake > 0) {
+    if(!paused && game.screenShake > 0) {
         const shakeX = (Math.random() - 0.5) * game.screenShake;
         const shakeY = (Math.random() - 0.5) * game.screenShake;
         ctx.translate(shakeX, shakeY);
         game.screenShake *= 0.9;
         if(game.screenShake < 0.5) game.screenShake = 0;
+    } else {
+        game.screenShake = 0;
     }
 
     // Clear canvas
@@ -4534,375 +6034,465 @@ function gameLoop() {
     // Draw background
     drawBackground();
 
-    // Draw shockwaves (behind everything)
-    updateShockwaves();
+    if(!paused) {
+        // Draw shockwaves (behind everything)
+        updateShockwaves();
 
-    // Draw wizard
-    drawWizard();
+        // Draw wizard
+        drawWizard();
 
-    let shooterOrigin = null;
+        let shooterOrigin = null;
 
-    // Draw and move monster or boss
-    if(!game.isGameOver) {
-        if(game.isBossFight) {
-            // Boss moves slowly and continuously towards witch
-            if(!game.bossDeathAnim) {
-                game.bossX -= 0.5;
-            }
-
-            const currentBoss = bosses[game.stage - 1];
-            drawBoss(currentBoss, game.bossX, 100, 1);
-
-            if(!game.bossDeathAnim && !game.witchDeathAnim) {
-                shooterOrigin = {
-                    x: game.bossX + 110,
-                    y: 220
-                };
-            }
-
-            // Check if boss reached witch (boss is 200px wide, witch at x=50)
-            if(game.bossX < 150 && !game.bossDeathAnim && !game.witchDeathAnim) {
-                gameOver();
-            }
-        } else {
-            // Normal monster behavior - always move
-            game.monsterX -= game.monsterSpeed;
-
-            // Handle inflation animation
-            if(game.explosion) {
-                const elapsed = Date.now() - game.explosion.startTime;
-                const progress = elapsed / game.explosion.duration;
-
-                if(progress < 1) {
-                    // Inflate gradually
-                    game.monsterScale = 1 + progress * 1.2;
-                } else {
-                    // Fully inflated - explode!
-                    createExplosion(game.monsterX, 180, game.currentMonster.color);
-                    game.explosion = null;
-                    game.monsterScale = 1;
-                    game.monsterX = canvas.width;
-                    game.monsterSpeed = 1; // Reset speed to default
-                    game.currentMonster = getNextMonsterForStage(game.stage);
-                    game.nextFireballTime = null;
-
-                    // Add pending score after explosion
-                    if(game.pendingScore > 0) {
-                        game.score += game.pendingScore;
-                        game.pendingScore = 0;
-                        updateScore();
-                    }
-
-                    // Progress stage system (4 questions + 1 boss per stage)
-                    game.questionsInStage++;
-                    if(game.questionsInStage >= 4) {
-                        // Start boss fight
-                        game.isBossFight = true;
-                        game.bossHealth = 5;
-                        game.questionsInStage = 0;
-                        game.bossX = 800;
-                        game.nextFireballTime = null;
-                    }
-
-                    generateProblem();
-
-                    // Re-enable buttons
-                    clearAnswerLock();
-                    setAnswerButtonsDisabled(false);
-                }
-            }
-
-            if(game.currentMonster) {
-                // Monster bobbing animation like witch
-                const monsterBobbing = Math.sin(Date.now() / 300) * 4;
-                const monsterY = 180 + monsterBobbing;
-                game.monsterVisualY = monsterY;
-
-                // Draw pulsing red aura around monster (only if not inflating)
-                if(!game.explosion) {
-                    const time = Date.now() / 1000;
-                    const pulse = Math.sin(time * 3) * 0.5 + 0.5; // 0-1
-                    const auraSize = 15 + pulse * 10;
-
-                    // Multiple aura layers for 3D effect
-                    for(let i = 0; i < 4; i++) {
-                    const layerOffset = i * 8;
-                    const layerPulse = Math.sin(time * 3 + i * 0.5) * 0.5 + 0.5;
-                    const alpha = (0.3 - i * 0.06) * layerPulse;
-
-                    ctx.save();
-                    ctx.globalAlpha = alpha;
-
-                    // Create radial gradient for glow
-                    const gradient = ctx.createRadialGradient(
-                        game.monsterX + 40, monsterY + 40,
-                        40 * game.monsterScale,
-                        game.monsterX + 40, monsterY + 40,
-                        (40 + auraSize + layerOffset) * game.monsterScale
-                    );
-                    gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
-                    gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.6)');
-                    gradient.addColorStop(0.8, 'rgba(255, 100, 0, 0.4)');
-                    gradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
-
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(
-                        game.monsterX - auraSize - layerOffset,
-                        monsterY - auraSize - layerOffset,
-                        (80 + (auraSize + layerOffset) * 2) * game.monsterScale,
-                        (80 + (auraSize + layerOffset) * 2) * game.monsterScale
-                    );
-
-                    ctx.restore();
-                    }
+        // Draw and move monster or boss
+        if(!game.isGameOver) {
+            if(game.isBossFight) {
+                // Boss moves slowly and continuously towards witch
+                if(!game.bossDeathAnim) {
+                    game.bossX -= 0.5;
                 }
 
-                drawMonster(game.currentMonster, game.monsterX, monsterY, game.monsterScale);
+                // Update boss animation frame once per game frame
+                game.bossAnimFrame += 0.05;
 
-                if(!game.explosion && !game.witchDeathAnim) {
+                const currentBoss = bosses[game.stage - 1];
+                drawBoss(currentBoss, game.bossX, 100, 1);
+
+                if(!game.bossDeathAnim && !game.witchDeathAnim) {
                     shooterOrigin = {
-                        x: game.monsterX + 40 * game.monsterScale,
-                        y: monsterY + 40 * game.monsterScale
+                        x: game.bossX + 110,
+                        y: 220
                     };
                 }
-            }
 
-            // Check if monster reached witch (monster is 80px wide, witch at x=50)
-            if(game.monsterX < 130 && !game.explosion && !game.witchDeathAnim) {
-                gameOver();
-            }
-        }
-    }
+                // Check if boss reached witch (boss is 200px wide, witch at x=50)
+                if(game.bossX < 150 && !game.bossDeathAnim && !game.witchDeathAnim) {
+                    gameOver();
+                }
+            } else {
+                // Normal monster behavior - always move
+                game.monsterX -= game.monsterSpeed;
 
-    if(shooterOrigin && !game.isGameOver) {
-        maybeLaunchMonsterFireball(shooterOrigin.x, shooterOrigin.y);
-    } else if(!shooterOrigin) {
-        game.nextFireballTime = null;
-    }
+                // Handle inflation animation
+                if(game.explosion) {
+                    const elapsed = Date.now() - game.explosion.startTime;
+                    const progress = elapsed / game.explosion.duration;
 
-    updateFireballs();
-    drawWitchShield();
+                    if(progress < 1) {
+                        // Inflate gradually
+                        game.monsterScale = 1 + progress * 1.2;
+                    } else {
+                        // Fully inflated - explode!
+                        createExplosion(game.monsterX, 180, game.currentMonster.color);
+                        game.explosion = null;
+                        game.monsterScale = 1;
+                        game.monsterX = canvas.width;
+                        game.monsterSpeed = 1; // Reset speed to default
+                        game.currentMonster = getNextMonsterForStage(game.stage);
+                        game.monsterHitFlash = 0;
+                        game.nextFireballTime = null;
 
-    // Draw particles
-    updateParticles();
+                        // Add pending score after explosion
+                        if(game.pendingScore > 0) {
+                            game.score += game.pendingScore;
+                            game.pendingScore = 0;
+                            updateScore();
+                        }
 
-    // Draw spell effect
-    if(game.spellEffect) {
-        const effect = game.spellEffect;
-        const now = Date.now();
+                        // Progress stage system (4 questions + 1 boss per stage)
+                        game.questionsInStage++;
+                        if(game.questionsInStage >= 4) {
+                            // Start boss fight
+                            game.isBossFight = true;
+                            game.bossHealth = 5;
+                            game.questionsInStage = 0;
+                            game.bossX = 800;
+                            game.nextFireballTime = null;
+                        }
 
-        if(effect.phase === 'charge') {
-            const progress = effect.chargeProgress !== undefined
-                ? effect.chargeProgress
-                : clamp01((now - effect.startTime) / effect.chargeDuration);
-            const collapse = Math.pow(Math.max(0, 1 - progress), 0.85);
-            const baseRadius = 45;
+                        generateProblem();
 
-            // Soft ambient glow that tightens as energy concentrates
-            const glowRadius = baseRadius * collapse + 18;
-            const glowGradient = ctx.createRadialGradient(
-                effect.originX,
-                effect.originY,
-                glowRadius * 0.25,
-                effect.originX,
-                effect.originY,
-                glowRadius
-            );
-            glowGradient.addColorStop(0, 'rgba(255, 255, 240, 0.75)');
-            glowGradient.addColorStop(0.4, 'rgba(255, 220, 120, 0.55)');
-            glowGradient.addColorStop(1, 'rgba(255, 160, 0, 0.05)');
+                        // Re-enable buttons
+                        clearAnswerLock();
+                        setAnswerButtonsDisabled(false);
+                    }
+                }
 
-            ctx.save();
-            ctx.globalAlpha = 0.8;
-            ctx.fillStyle = glowGradient;
-            ctx.beginPath();
-            ctx.arc(effect.originX, effect.originY, glowRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+                if(game.currentMonster) {
+                    // Monster bobbing animation like witch
+                    const monsterBobbing = Math.sin(Date.now() / 300) * 4;
+                    const monsterY = 180 + monsterBobbing;
+                    game.monsterVisualY = monsterY;
 
-            // Elliptical swirl for a subtle 3D feel
-            ctx.save();
-            ctx.translate(effect.originX, effect.originY);
-            const wobble = Math.sin(now / 220) * 0.2;
-            ctx.rotate(wobble);
-            const squash = 0.55 + Math.sin(now / 260) * 0.1;
-            ctx.scale(1.3, squash);
+                    // Draw pulsing red aura around monster (only if not inflating)
+                    if(!game.explosion) {
+                        const time = Date.now() / 1000;
+                        const pulse = Math.sin(time * 3) * 0.5 + 0.5; // 0-1
+                        const auraSize = 15 + pulse * 10;
 
-            for(let i = 0; i < 3; i++) {
-                const offsetProgress = (progress * 1.5 + i * 0.25) % 1;
-                const ringRadius = Math.max(6, (baseRadius - i * 10) * collapse + 8);
-                const ringAlpha = clamp01(0.65 - offsetProgress * 0.5);
+                        // Multiple aura layers for 3D effect
+                        for(let i = 0; i < 4; i++) {
+                        const layerOffset = i * 8;
+                        const layerPulse = Math.sin(time * 3 + i * 0.5) * 0.5 + 0.5;
+                        const alpha = (0.3 - i * 0.06) * layerPulse;
 
-                ctx.globalAlpha = ringAlpha;
-                ctx.lineWidth = 6 - i * 1.8;
-                ctx.strokeStyle = `rgba(255, ${200 - i * 30}, ${80 + i * 20}, ${0.7 - i * 0.15})`;
-                ctx.beginPath();
-                ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-            ctx.restore();
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
 
-            // Sparking motes spiralling inward
-            for(let i = 0; i < 6; i++) {
-                const spin = now / 90 + i * (Math.PI * 2 / 6);
-                const orbit = (baseRadius * 0.6) * collapse + 6;
-                const px = effect.originX + Math.cos(spin) * orbit;
-                const py = effect.originY + Math.sin(spin) * orbit * 0.55;
-                ctx.globalAlpha = 0.6 - progress * 0.3;
-                ctx.fillStyle = '#fff8dc';
-                ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
-            }
+                        // Create radial gradient for glow
+                        const gradient = ctx.createRadialGradient(
+                            game.monsterX + 40, monsterY + 40,
+                            40 * game.monsterScale,
+                            game.monsterX + 40, monsterY + 40,
+                            (40 + auraSize + layerOffset) * game.monsterScale
+                        );
+                        gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+                        gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.6)');
+                        gradient.addColorStop(0.8, 'rgba(255, 100, 0, 0.4)');
+                        gradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
 
-            // Intensifying core that collapses into the launch point
-            const coreRadius = Math.max(2, 10 * collapse);
-            const coreGradient = ctx.createRadialGradient(
-                effect.originX,
-                effect.originY,
-                0,
-                effect.originX,
-                effect.originY,
-                coreRadius * 2
-            );
-            coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-            coreGradient.addColorStop(0.6, 'rgba(255, 240, 180, 0.85)');
-            coreGradient.addColorStop(1, 'rgba(255, 200, 80, 0.3)');
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(
+                            game.monsterX - auraSize - layerOffset,
+                            monsterY - auraSize - layerOffset,
+                            (80 + (auraSize + layerOffset) * 2) * game.monsterScale,
+                            (80 + (auraSize + layerOffset) * 2) * game.monsterScale
+                        );
 
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = coreGradient;
-            ctx.beginPath();
-            ctx.arc(effect.originX, effect.originY, coreRadius * 1.2, 0, Math.PI * 2);
-            ctx.fill();
-        } else {
-            const radius = effect.radius || 10;
+                        ctx.restore();
+                        }
+                    }
 
-            // Trailing bloom
-            if(effect.trail && effect.trail.length) {
-                for(let i = 0; i < effect.trail.length; i++) {
-                    const segment = effect.trail[i];
-                    const fade = 1 - i / effect.trail.length;
-                    ctx.globalAlpha = (segment.alpha || 0.4) * fade * 0.6;
-                    const tailGradient = ctx.createRadialGradient(
-                        segment.x,
-                        segment.y,
-                        0,
-                        segment.x,
-                        segment.y,
-                        (segment.radius || radius) * 1.6
-                    );
-                    tailGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-                    tailGradient.addColorStop(0.6, 'rgba(255, 210, 120, 0.25)');
-                    tailGradient.addColorStop(1, 'rgba(255, 140, 0, 0)');
-                    ctx.fillStyle = tailGradient;
-                    ctx.beginPath();
-                    ctx.arc(segment.x, segment.y, (segment.radius || radius) * 1.1, 0, Math.PI * 2);
-                    ctx.fill();
+                    drawMonster(game.currentMonster, game.monsterX, monsterY, game.monsterScale);
+
+                    if(!game.explosion && !game.witchDeathAnim) {
+                        shooterOrigin = {
+                            x: game.monsterX + 40 * game.monsterScale,
+                            y: monsterY + 40 * game.monsterScale
+                        };
+                    }
+                }
+
+                // Check if monster reached witch (monster is 80px wide, witch at x=50)
+                if(game.monsterX < 130 && !game.explosion && !game.witchDeathAnim) {
+                    gameOver();
                 }
             }
+        }
 
-            // Main projectile orb that grows mid-flight
-            const projectileGradient = ctx.createRadialGradient(
-                effect.x,
-                effect.y,
-                0,
-                effect.x,
-                effect.y,
-                radius * 2.2
-            );
-            projectileGradient.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-            projectileGradient.addColorStop(0.2, 'rgba(255, 250, 210, 0.9)');
-            projectileGradient.addColorStop(0.6, 'rgba(255, 200, 80, 0.8)');
-            projectileGradient.addColorStop(1, 'rgba(255, 120, 0, 0)');
+        if(shooterOrigin && !game.isGameOver) {
+            maybeLaunchMonsterFireball(shooterOrigin.x, shooterOrigin.y);
+        } else if(!shooterOrigin) {
+            game.nextFireballTime = null;
+        }
 
-            ctx.globalAlpha = effect.alpha;
-            ctx.fillStyle = projectileGradient;
-            ctx.beginPath();
-            ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
-            ctx.fill();
+        updateFireballs();
+        drawWitchShield();
 
-            // Leading highlight that stretches in the travel direction
-            if(typeof effect.directionAngle === 'number') {
+        // Draw particles
+        updateParticles();
+
+        // Draw spell effect
+        if(game.spellEffect) {
+            const effect = game.spellEffect;
+            const now = Date.now();
+
+            if(effect.phase === 'charge') {
+                const progress = effect.chargeProgress !== undefined
+                    ? effect.chargeProgress
+                    : clamp01((now - effect.startTime) / effect.chargeDuration);
+                const collapse = Math.pow(Math.max(0, 1 - progress), 0.85);
+                const baseRadius = 46;
+                const baseHue = effect.hue;
+
+                // Luminous breathing aura
+                const glowRadius = baseRadius * collapse + 22;
+                const glowGradient = ctx.createRadialGradient(
+                    effect.originX,
+                    effect.originY,
+                    glowRadius * 0.2,
+                    effect.originX,
+                    effect.originY,
+                    glowRadius
+                );
+                glowGradient.addColorStop(0, `hsla(${baseHue}, 100%, 88%, ${0.85 - progress * 0.25})`);
+                glowGradient.addColorStop(0.45, `hsla(${(baseHue + 80) % 360}, 95%, 65%, ${0.55 - progress * 0.2})`);
+                glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0.05)');
+
                 ctx.save();
-                ctx.translate(effect.x, effect.y);
-                ctx.rotate(effect.directionAngle);
-                const highlightGradient = ctx.createLinearGradient(0, 0, radius * 1.8, 0);
-                highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-                highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                ctx.fillStyle = highlightGradient;
-                ctx.globalAlpha = 0.8;
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = glowGradient;
                 ctx.beginPath();
-                ctx.ellipse(radius * 0.4, 0, radius * 1.1, radius * 0.45, 0, 0, Math.PI * 2);
+                ctx.arc(effect.originX, effect.originY, glowRadius, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
-            }
 
-            // Sparkling embers around the projectile
-            for(let i = 0; i < 6; i++) {
-                const angle = now / 80 + i * (Math.PI * 2 / 6);
-                const distance = radius * 1.4;
-                const px = effect.x + Math.cos(angle) * distance;
-                const py = effect.y + Math.sin(angle) * distance;
-                ctx.globalAlpha = 0.5;
-                ctx.fillStyle = '#fff4c2';
-                ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
-            }
-        }
-
-        ctx.globalAlpha = 1;
-    }
-
-    // Draw wave distortion effects
-    for(let i = game.waveDistortion.length - 1; i >= 0; i--) {
-        const wave = game.waveDistortion[i];
-        wave.radius += wave.speed;
-        wave.life -= 0.02;
-
-        if(wave.life <= 0 || wave.radius > wave.maxRadius) {
-            game.waveDistortion.splice(i, 1);
-            continue;
-        }
-
-        // Draw distortion rings with varying thickness
-        for(let j = 0; j < 3; j++) {
-            const offset = j * 15;
-            const currentRadius = wave.radius - offset;
-
-            if(currentRadius > 0) {
+                // Helical arc rings
                 ctx.save();
-                ctx.globalAlpha = wave.life * (1 - j * 0.3);
+                ctx.translate(effect.originX, effect.originY);
+                const wobble = Math.sin(now / 220) * 0.25;
+                ctx.rotate(wobble);
+                const squash = 0.65 + Math.sin(now / 260) * 0.12;
+                ctx.scale(1.35, squash);
 
-                // Outer white ring
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 5 - j;
-                ctx.beginPath();
-                ctx.arc(wave.x, wave.y, currentRadius, 0, Math.PI * 2);
-                ctx.stroke();
+                for(let i = 0; i < 4; i++) {
+                    const offsetProgress = (progress * 1.8 + i * 0.22) % 1;
+                    const ringRadius = Math.max(8, (baseRadius - i * 10) * collapse + 10);
+                    const ringAlpha = clamp01(0.75 - offsetProgress * 0.55);
+                    const ringHue = (baseHue + i * 45) % 360;
 
-                // Inner colored ring (with safety check for gradient radii)
-                const innerRadius = Math.max(0, currentRadius - 5);
-                const outerRadius = Math.max(innerRadius + 0.1, currentRadius);
-                const gradient = ctx.createRadialGradient(wave.x, wave.y, innerRadius, wave.x, wave.y, outerRadius);
-                gradient.addColorStop(0, '#ff0000');
-                gradient.addColorStop(0.5, '#ff8c00');
-                gradient.addColorStop(1, '#ffd700');
-                ctx.strokeStyle = gradient;
-                ctx.lineWidth = 3 - j;
-                ctx.beginPath();
-                ctx.arc(wave.x, wave.y, Math.max(0, currentRadius - 3), 0, Math.PI * 2);
-                ctx.stroke();
-
+                    ctx.globalAlpha = ringAlpha;
+                    ctx.lineWidth = 6 - i * 1.4;
+                    ctx.strokeStyle = `hsla(${ringHue}, 100%, ${70 - i * 8}%, ${0.75 - i * 0.12})`;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
                 ctx.restore();
+
+                // Spiralling motes collapsing inward
+                for(let i = 0; i < 7; i++) {
+                    const spin = now / 90 + i * (Math.PI * 2 / 7);
+                    const orbit = (baseRadius * 0.55) * collapse + 6;
+                    const px = effect.originX + Math.cos(spin) * orbit;
+                    const py = effect.originY + Math.sin(spin) * orbit * 0.55;
+                    const hue = (baseHue + i * 30) % 360;
+                    ctx.globalAlpha = 0.7 - progress * 0.4;
+                    ctx.fillStyle = `hsla(${hue}, 100%, 78%, ${0.8 - progress * 0.3})`;
+                    ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+                }
+
+                // Intensifying core that funnels the energy forward
+                const coreRadius = Math.max(3, 12 * collapse);
+                const coreGradient = ctx.createRadialGradient(
+                    effect.originX,
+                    effect.originY,
+                    0,
+                    effect.originX,
+                    effect.originY,
+                    coreRadius * 2.4
+                );
+                coreGradient.addColorStop(0, `hsla(${(baseHue + 20) % 360}, 100%, 92%, 1)`);
+                coreGradient.addColorStop(0.5, `hsla(${(baseHue + 120) % 360}, 95%, 70%, ${0.85 - progress * 0.3})`);
+                coreGradient.addColorStop(1, 'rgba(255, 255, 255, 0.25)');
+
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = coreGradient;
+                ctx.beginPath();
+                ctx.arc(effect.originX, effect.originY, coreRadius * 1.3, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                const radius = effect.radius || 10;
+
+                // Exhaust plumes swirling behind the projectile
+                if(effect.exhaust && effect.exhaust.length) {
+                    for(let i = effect.exhaust.length - 1; i >= 0; i--) {
+                        const puff = effect.exhaust[i];
+                        const alpha = Math.max(0, puff.life);
+                        if(alpha <= 0) continue;
+                        const puffRadius = puff.radius;
+                        const plumeGradient = ctx.createRadialGradient(
+                            puff.x,
+                            puff.y,
+                            0,
+                            puff.x,
+                            puff.y,
+                            puffRadius
+                        );
+                        plumeGradient.addColorStop(0, `hsla(${puff.hue}, 100%, 80%, ${0.45 * alpha})`);
+                        plumeGradient.addColorStop(0.5, `hsla(${(puff.hue + 60) % 360}, 90%, 65%, ${0.3 * alpha})`);
+                        plumeGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                        ctx.globalAlpha = 1;
+                        ctx.fillStyle = plumeGradient;
+                        ctx.beginPath();
+                        ctx.arc(puff.x, puff.y, puffRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                // Radiant trail ribbon
+                if(effect.trail && effect.trail.length) {
+                    for(let i = 0; i < effect.trail.length; i++) {
+                        const segment = effect.trail[i];
+                        const fade = 1 - i / effect.trail.length;
+                        const segmentRadius = (segment.radius || radius) * (1.2 + fade * 1.25);
+                        const tailGradient = ctx.createRadialGradient(
+                            segment.x,
+                            segment.y,
+                            0,
+                            segment.x,
+                            segment.y,
+                            segmentRadius
+                        );
+                        tailGradient.addColorStop(0, `hsla(${(segment.hue + 10) % 360}, 100%, 88%, ${0.6 * fade})`);
+                        tailGradient.addColorStop(0.4, `hsla(${(segment.hue + 90) % 360}, 100%, 65%, ${0.45 * fade})`);
+                        tailGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                        ctx.globalAlpha = 1;
+                        ctx.fillStyle = tailGradient;
+                        ctx.beginPath();
+                        ctx.arc(segment.x, segment.y, segmentRadius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    ctx.save();
+                    ctx.globalAlpha = 0.36;
+                    ctx.lineWidth = Math.max(6, radius * 0.55);
+                    ctx.lineCap = 'round';
+                    const tailGradient = ctx.createLinearGradient(
+                        effect.renderX,
+                        effect.renderY,
+                        effect.trail[Math.min(effect.trail.length - 1, 6)].x,
+                        effect.trail[Math.min(effect.trail.length - 1, 6)].y
+                    );
+                    tailGradient.addColorStop(0, `hsla(${effect.hue}, 100%, 78%, 0.9)`);
+                    tailGradient.addColorStop(1, `hsla(${(effect.hue + 170) % 360}, 90%, 55%, 0)`);
+                    ctx.strokeStyle = tailGradient;
+                    ctx.beginPath();
+                    ctx.moveTo(effect.renderX, effect.renderY);
+                    const ribbonSegments = Math.min(effect.trail.length, 6);
+                    for(let i = 1; i < ribbonSegments; i++) {
+                        ctx.lineTo(effect.trail[i].x, effect.trail[i].y);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // Sparkling mote field
+                if(effect.sparkles && effect.sparkles.length) {
+                    ctx.save();
+                    for(const sparkle of effect.sparkles) {
+                        const alpha = Math.max(0, sparkle.life);
+                        if(alpha <= 0) continue;
+                        const sparkleSize = sparkle.size || 4;
+                        ctx.globalAlpha = 0.6 * alpha;
+                        ctx.fillStyle = `hsla(${sparkle.hue}, 100%, 85%, ${0.9 * alpha})`;
+                        ctx.beginPath();
+                        ctx.arc(sparkle.x, sparkle.y, sparkleSize * 0.4, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.globalAlpha = 0.75 * alpha;
+                        ctx.strokeStyle = `hsla(${(sparkle.hue + 40) % 360}, 100%, 70%, ${alpha})`;
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.moveTo(sparkle.x - sparkleSize, sparkle.y);
+                        ctx.lineTo(sparkle.x + sparkleSize, sparkle.y);
+                        ctx.moveTo(sparkle.x, sparkle.y - sparkleSize);
+                        ctx.lineTo(sparkle.x, sparkle.y + sparkleSize);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+
+                // Main projectile orb that grows mid-flight
+                const projectileGradient = ctx.createRadialGradient(
+                    effect.renderX,
+                    effect.renderY,
+                    0,
+                    effect.renderX,
+                    effect.renderY,
+                    radius * 2.4
+                );
+                projectileGradient.addColorStop(0, `hsla(${effect.hue}, 100%, 90%, 1)`);
+                projectileGradient.addColorStop(0.25, `hsla(${(effect.hue + 40) % 360}, 100%, 68%, 0.95)`);
+                projectileGradient.addColorStop(0.65, `hsla(${(effect.hue + 130) % 360}, 90%, 60%, 0.8)`);
+                projectileGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+                ctx.globalAlpha = effect.alpha;
+                ctx.fillStyle = projectileGradient;
+                ctx.beginPath();
+                ctx.arc(effect.renderX, effect.renderY, radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Leading highlight that stretches in the travel direction
+                if(typeof effect.directionAngle === 'number') {
+                    ctx.save();
+                    ctx.translate(effect.renderX, effect.renderY);
+                    ctx.rotate(effect.renderAngle || effect.directionAngle);
+                    const highlightGradient = ctx.createLinearGradient(0, 0, radius * 2.2, 0);
+                    highlightGradient.addColorStop(0, `hsla(${(effect.hue + 20) % 360}, 100%, 92%, 0.95)`);
+                    highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                    ctx.fillStyle = highlightGradient;
+                    ctx.globalAlpha = 0.9;
+                    ctx.beginPath();
+                    ctx.ellipse(radius * 0.45, 0, radius * 1.2, radius * 0.5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // Orbiting embers around the projectile
+                for(let i = 0; i < 7; i++) {
+                    const angle = now / 80 + i * (Math.PI * 2 / 7);
+                    const distance = radius * (1.8 + Math.sin(now / 240 + i) * 0.35);
+                    const px = effect.renderX + Math.cos(angle) * distance;
+                    const py = effect.renderY + Math.sin(angle) * distance;
+                    ctx.globalAlpha = 0.55;
+                    ctx.fillStyle = `hsla(${(effect.hue + i * 32) % 360}, 100%, 82%, 0.95)`;
+                    ctx.beginPath();
+                    ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.globalAlpha = 1;
+            }
+
+            ctx.globalAlpha = 1;
+        }
+
+        // Draw wave distortion effects
+        for(let i = game.waveDistortion.length - 1; i >= 0; i--) {
+            const wave = game.waveDistortion[i];
+            wave.radius += wave.speed;
+            wave.life -= 0.02;
+
+            if(wave.life <= 0 || wave.radius > wave.maxRadius) {
+                game.waveDistortion.splice(i, 1);
+                continue;
+            }
+
+            // Draw distortion rings with varying thickness
+            for(let j = 0; j < 3; j++) {
+                const offset = j * 15;
+                const currentRadius = wave.radius - offset;
+
+                if(currentRadius > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = wave.life * (1 - j * 0.3);
+
+                    // Outer white ring
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 5 - j;
+                    ctx.beginPath();
+                    ctx.arc(wave.x, wave.y, currentRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Inner colored ring (with safety check for gradient radii)
+                    const innerRadius = Math.max(0, currentRadius - 5);
+                    const outerRadius = Math.max(innerRadius + 0.1, currentRadius);
+                    const gradient = ctx.createRadialGradient(wave.x, wave.y, innerRadius, wave.x, wave.y, outerRadius);
+                    gradient.addColorStop(0, '#ff0000');
+                    gradient.addColorStop(0.5, '#ff8c00');
+                    gradient.addColorStop(1, '#ffd700');
+                    ctx.strokeStyle = gradient;
+                    ctx.lineWidth = 3 - j;
+                    ctx.beginPath();
+                    ctx.arc(wave.x, wave.y, Math.max(0, currentRadius - 3), 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
             }
         }
-    }
 
-    // Screen flash effect
-    if(game.screenFlash > 0) {
-        ctx.globalAlpha = game.screenFlash * 0.7;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.globalAlpha = 1;
-        game.screenFlash -= 0.05;
-        if(game.screenFlash < 0) game.screenFlash = 0;
+        // Screen flash effect
+        if(game.screenFlash > 0) {
+            ctx.globalAlpha = game.screenFlash * 0.7;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = 1;
+            game.screenFlash -= 0.05;
+            if(game.screenFlash < 0) game.screenFlash = 0;
+        }
+    } else {
+        game.nextFireballTime = null;
     }
 
     // Stage announcement (overlay on top of game)
@@ -4914,49 +6504,108 @@ function gameLoop() {
         if(progress < 1) {
             // Fade in/out effect
             let alpha;
-            if(progress < 0.2) {
-                alpha = progress / 0.2; // Fade in
-            } else if(progress > 0.8) {
-                alpha = (1 - progress) / 0.2; // Fade out
+            if(progress < 0.15) {
+                alpha = progress / 0.15; // Fade in
+            } else if(progress > 0.85) {
+                alpha = (1 - progress) / 0.15; // Fade out
             } else {
-                alpha = 1; // Full opacity
+                alpha = 1;
             }
 
+            const stageText = `Kolo ${game.stageAnnouncement.stage}`;
+            const stageName = getStageNameForDisplay(game.stageAnnouncement.stage);
+
+            const bannerMarginX = 32;
+            const bannerY = 20;
+            const bannerHeight = 68;
+            const bannerWidth = canvas.width - bannerMarginX * 2;
+            const centerX = canvas.width / 2;
+
+            ctx.save();
             ctx.globalAlpha = alpha;
 
-            // Stage text with dark background box
-            const stageText = `Stage ${game.stageAnnouncement.stage}`;
-            const stageName = stageNames[game.stageAnnouncement.stage - 1] || 'Unknown';
+            // Subtle dark background strip
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(bannerMarginX, bannerY, bannerWidth, bannerHeight);
 
-            // Background box for text
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-            ctx.fillRect(canvas.width / 2 - 250, canvas.height / 2 - 60, 500, 120);
-
-            // Border
-            ctx.strokeStyle = '#ffd700';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(canvas.width / 2 - 250, canvas.height / 2 - 60, 500, 120);
-
-            // Stage text
-            ctx.fillStyle = '#ffd700';
-            ctx.font = 'bold 48px monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            // Glow effect
-            ctx.shadowColor = '#ffd700';
-            ctx.shadowBlur = 20;
-            ctx.fillText(stageText, canvas.width / 2, canvas.height / 2 - 20);
+            // Stage label
+            ctx.font = '700 30px monospace';
+            ctx.fillStyle = '#ffd700';
+            ctx.shadowColor = 'rgba(255, 215, 0, 0.7)';
+            ctx.shadowBlur = 12;
+            ctx.fillText(stageText, centerX, bannerY + 24);
 
             // Stage name
-            ctx.shadowBlur = 15;
-            ctx.font = 'bold 28px monospace';
+            ctx.shadowBlur = 8;
+            ctx.font = '600 22px monospace';
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(stageName, canvas.width / 2, canvas.height / 2 + 25);
+            ctx.fillText(stageName, centerX, bannerY + bannerHeight - 20);
 
-            ctx.shadowBlur = 0;
-            ctx.globalAlpha = 1;
+            ctx.restore();
         }
+    }
+
+    // Debug mode: show all bosses at once
+    if(debugBoss) {
+        ctx.save();
+
+        // Draw semi-transparent overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Update boss animation frame once per game frame
+        game.bossAnimFrame += 0.05;
+
+        // Draw all 10 bosses in a 5x2 grid
+        const cols = 5;
+        const rows = 2;
+        const bossScale = 0.55;
+        const cellWidth = canvas.width / cols;
+        const cellHeight = canvas.height / rows;
+
+        for(let i = 0; i < bosses.length; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const x = col * cellWidth + cellWidth / 2 - 100 * bossScale;
+            const y = row * cellHeight + cellHeight / 2 - 100 * bossScale - 15;
+
+            // Draw boss
+            drawBoss(bosses[i], x, y, bossScale);
+
+            // Draw label
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#000000';
+            ctx.shadowBlur = 4;
+            const labelX = col * cellWidth + cellWidth / 2;
+            const labelY = row * cellHeight + cellHeight - 15;
+            ctx.fillText(bosses[i].name, labelX, labelY);
+            ctx.shadowBlur = 0;
+        }
+
+        // Draw debug info
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('DEBUG BOSS MODE (window.debugBoss = false to disable)', 10, 20);
+
+        ctx.restore();
+    }
+
+    // Debug mode: show FPS
+    if(debugFPS) {
+        ctx.save();
+        ctx.fillStyle = '#00ff00';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'right';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 3;
+        ctx.fillText(`FPS: ${currentFPS}`, canvas.width - 10, 20);
+        ctx.restore();
     }
 
     ctx.restore();
@@ -4969,19 +6618,228 @@ if(versionElement) {
     if(VERSION_INFO.mismatch && VERSION_INFO.fromQuery) {
         const mismatchLabel = `JS ${VERSION_INFO.declared} / HTML ${VERSION_INFO.fromQuery}`;
         versionElement.textContent = `⚠️ ${mismatchLabel}`;
-        versionElement.setAttribute('title', `Version mismatch detected: ${mismatchLabel}`);
+        versionElement.setAttribute('title', `Nesoulad verzí: ${mismatchLabel}`);
     } else {
         versionElement.textContent = GAME_VERSION;
         versionElement.removeAttribute('title');
     }
 }
 
-// Initialize game
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const gameOverDialog = document.getElementById('gameOver');
+const ageOverlay = document.getElementById('ageOverlay');
+const ageModal = document.getElementById('ageModal');
+const gradeSlider = document.getElementById('gradeSlider');
+const gradeValueLabel = document.getElementById('gradeValue');
+const startGameButton = document.getElementById('startGameBtn');
+const restartButton = document.getElementById('restartBtn');
+
+function initializeResponsiveScaling() {
+    const viewport = document.getElementById('gameViewport');
+
+    if(!viewport) {
+        return;
+    }
+
+    const MIN_SCALE = 0.45;
+    let pendingFrame = null;
+    let isApplyingScale = false;
+
+    const applyScale = () => {
+        if(isApplyingScale) {
+            return;
+        }
+
+        isApplyingScale = true;
+
+        document.documentElement.style.setProperty('--height-scale', '1');
+        void viewport.offsetHeight;
+
+        const availableWidth = window.innerWidth;
+        const availableHeight = window.innerHeight;
+
+        let naturalWidth = viewport.scrollWidth;
+        let naturalHeight = viewport.scrollHeight;
+
+        if(!Number.isFinite(naturalWidth) || naturalWidth <= 0) {
+            naturalWidth = availableWidth;
+        }
+
+        if(!Number.isFinite(naturalHeight) || naturalHeight <= 0) {
+            naturalHeight = availableHeight;
+        }
+
+        let targetScale = Math.min(1,
+            Math.max(0.0001, availableWidth / naturalWidth),
+            Math.max(0.0001, availableHeight / naturalHeight)
+        );
+
+        if(!Number.isFinite(targetScale) || targetScale <= 0) {
+            targetScale = 1;
+        }
+
+        targetScale = Math.max(MIN_SCALE, Math.min(1, targetScale));
+        document.documentElement.style.setProperty('--height-scale', targetScale.toFixed(4));
+
+        // Check if additional adjustment is needed after reflow
+        const scaledWidth = viewport.scrollWidth;
+        const scaledHeight = viewport.scrollHeight;
+
+        const widthRatio = scaledWidth > 0 ? availableWidth / scaledWidth : 1;
+        const heightRatio = scaledHeight > 0 ? availableHeight / scaledHeight : 1;
+        const correctionFactor = Math.min(widthRatio, heightRatio);
+
+        if(correctionFactor > 0 && correctionFactor < 0.999 && targetScale > MIN_SCALE) {
+            const correctedScale = Math.max(MIN_SCALE, targetScale * correctionFactor);
+            if(correctedScale < targetScale - 0.0001) {
+                document.documentElement.style.setProperty('--height-scale', correctedScale.toFixed(4));
+            }
+        }
+
+        requestAnimationFrame(() => {
+            isApplyingScale = false;
+        });
+    };
+
+    const scheduleScaleUpdate = () => {
+        if(pendingFrame !== null) {
+            cancelAnimationFrame(pendingFrame);
+        }
+        pendingFrame = requestAnimationFrame(() => {
+            pendingFrame = null;
+            applyScale();
+        });
+    };
+
+    scheduleScaleUpdate();
+
+    window.addEventListener('resize', scheduleScaleUpdate, { passive: true });
+    window.addEventListener('orientationchange', scheduleScaleUpdate);
+
+    if(typeof ResizeObserver === 'function') {
+        const observer = new ResizeObserver(() => {
+            if(!isApplyingScale) {
+                scheduleScaleUpdate();
+            }
+        });
+        observer.observe(viewport);
+    }
+}
+
+function readStoredGrade() {
+    try {
+        const stored = localStorage.getItem(GRADE_STORAGE_KEY);
+        const numeric = parseInt(stored, 10);
+        if(!Number.isNaN(numeric) && numeric >= GRADE_SLIDER_MIN && numeric <= GRADE_SLIDER_MAX) {
+            return numeric;
+        }
+    } catch(err) {
+        // Ignore storage issues and fall back to default
+    }
+    return null;
+}
+
+function writeStoredGrade(value) {
+    try {
+        localStorage.setItem(GRADE_STORAGE_KEY, String(value));
+    } catch(err) {
+        // Ignore storage issues and continue without persistence
+    }
+}
+
+function updateGradeLabel(value) {
+    if(!gradeValueLabel) {
+        return;
+    }
+
+    const normalized = Math.min(Math.max(typeof value === 'number' ? value : parseInt(value, 10) || GRADE_SLIDER_MIN, GRADE_SLIDER_MIN), GRADE_SLIDER_MAX);
+    gradeValueLabel.textContent = getGradeLabel(normalized);
+    updateAgeModalBackground(normalized);
+}
+
+function closeAgeModal() {
+    if(ageOverlay) {
+        ageOverlay.style.display = 'none';
+    }
+    if(ageModal) {
+        ageModal.style.display = 'none';
+    }
+}
+
+function openAgeModal() {
+    const stored = typeof game.selectedGrade === 'number' && !Number.isNaN(game.selectedGrade)
+        ? game.selectedGrade
+        : readStoredGrade();
+    const effective = typeof stored === 'number' && stored >= GRADE_SLIDER_MIN && stored <= GRADE_SLIDER_MAX
+        ? stored
+        : GRADE_SLIDER_MIN;
+
+    game.isPausedForModal = true;
+
+    if(gradeSlider) {
+        gradeSlider.value = String(effective);
+    }
+
+    updateGradeLabel(effective);
+
+    if(ageOverlay) {
+        ageOverlay.style.display = 'block';
+    }
+    if(ageModal) {
+        ageModal.style.display = 'block';
+    }
+}
+
+function setupAgeSelectionUI() {
+    if(gradeSlider) {
+        gradeSlider.min = String(GRADE_SLIDER_MIN);
+        gradeSlider.max = String(GRADE_SLIDER_MAX);
+        gradeSlider.addEventListener('input', event => {
+            updateGradeLabel(event.target.value);
+        });
+    }
+
+    const storedGrade = readStoredGrade();
+    const initialGrade = typeof storedGrade === 'number' ? storedGrade : GRADE_SLIDER_MIN;
+
+    if(gradeSlider) {
+        gradeSlider.value = String(initialGrade);
+    }
+
+    updateGradeLabel(initialGrade);
+    game.selectedGrade = initialGrade;
+
+    if(startGameButton) {
+        startGameButton.addEventListener('click', () => {
+            let sliderValue = gradeSlider ? parseInt(gradeSlider.value, 10) : initialGrade;
+            if(Number.isNaN(sliderValue)) {
+                sliderValue = initialGrade;
+            }
+            sliderValue = Math.min(Math.max(sliderValue, GRADE_SLIDER_MIN), GRADE_SLIDER_MAX);
+            game.selectedGrade = sliderValue;
+            writeStoredGrade(sliderValue);
+            hideGameOverDialog();
+            closeAgeModal();
+            resetGameStateForNewRun();
+        });
+    }
+
+    if(restartButton) {
+        restartButton.onclick = () => {
+            hideGameOverDialog();
+            openAgeModal();
+        };
+    }
+}
+
+initializeResponsiveScaling();
+setupAgeSelectionUI();
+
+// Initialize game visuals
 initBats();
 initSeagulls();
 game.timeState = computeDayNightState();
 refreshEnvironment(game.timeState, { regenerateClouds: true });
-resetMonsterCycle(game.stage);
-game.currentMonster = getNextMonsterForStage(game.stage);
-showStageAnnouncement(game.stage);
+
 gameLoop();
+openAgeModal();
